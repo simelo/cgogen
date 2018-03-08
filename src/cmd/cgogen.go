@@ -106,14 +106,22 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		recvParam = recvParam.Id(typeSpecStr(&receiver.List[0].Type))
 		params = append(params, recvParam)
 	}
-	for _, field := range fdecl.Type.Params.List {
-		fmt.Println("param")
+	allparams := fdecl.Type.Params.List[:]
+	var retField *ast.Field = nil
+	if fdecl.Type.Results.List != nil {
+		lastFieldIdx := len(fdecl.Type.Results.List) - 1
+		allparams = append(allparams, fdecl.Type.Results.List[:lastFieldIdx]...)
+		retField = fdecl.Type.Results.List[lastFieldIdx]
+	}
+	for fieldIdx, field := range allparams {
 		if field.Names == nil {
-			params = append(params, jen.Id(typeSpecStr(&field.Type)))
+			params = append(params, jen.Id(
+				argName("arg"+fmt.Sprintf("%d", fieldIdx))).Id(
+				typeSpecStr(&field.Type)))
 		} else {
-			lastIdx := len(field.Names) - 1
-			for idx, ident := range field.Names {
-				if idx != lastIdx {
+			lastNameIdx := len(field.Names) - 1
+			for nameIdx, ident := range field.Names {
+				if nameIdx != lastNameIdx {
 					params = append(params, jen.Id(argName(ident.Name)))
 				} else {
 					params = append(params, jen.Id(
@@ -121,9 +129,14 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 				}
 			}
 		}
+
 	}
+
 	stmt = stmt.Params(params...)
 	// TODO: Function type
+	if retField != nil {
+		fmt.Println("Hasret")
+	}
 	stmt.Id("Type")
 }
 
