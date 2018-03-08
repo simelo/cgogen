@@ -69,7 +69,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	if receiver := fdecl.Recv; receiver != nil {
 		// Method
 		// TODO: Param type
-		params = append(params, *(jen.Id(receiver.List[0].Names[0].Name).Id("Type"))...)
+		params = append(params, jen.Id(receiver.List[0].Names[0].Name).Id("Type"))
 	}
 	for _, field := range fdecl.Type.Params.List {
 		if field.Names == nil {
