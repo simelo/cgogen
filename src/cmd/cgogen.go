@@ -59,6 +59,39 @@ func main() {
 	fmt.Printf("%#v", outFile)
 }
 
+func isAsciiUpper(c rune) bool {
+	return c >= 'A' && c <= 'Z'
+}
+
+func typeSpecStr(_typeExpr *ast.Expr) string {
+	spec := ""
+	if starExpr, isStar := (*_typeExpr).(*ast.StarExpr); isStar {
+		spec += "*"
+		_typeExpr = &starExpr.X
+	}
+	typeName := ""
+	isIdent := false
+	if identExpr, _isIdent := (*_typeExpr).(*ast.Ident); _isIdent {
+		typeName = identExpr.Name
+		isIdent = true
+	}
+	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
+		typeName = "GoSlice"
+	}
+	if isAsciiUpper(rune(typeName[0])) {
+		if isIdent && spec == "" {
+			spec += "*C."
+		} else {
+			spec += "C."
+		}
+	}
+	return spec + typeName
+}
+
+func argName(name string) string {
+	return "_" + name
+}
+
 func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	if !fdecl.Name.IsExported() {
 		return
@@ -69,27 +102,29 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	if receiver := fdecl.Recv; receiver != nil {
 		// Method
 		// TODO: Param type
-		params = append(params, jen.Id(receiver.List[0].Names[0].Name).Id("Type"))
+		recvParam := jen.Id(argName(receiver.List[0].Names[0].Name))
+		recvParam = recvParam.Id(typeSpecStr(&receiver.List[0].Type))
+		params = append(params, recvParam)
 	}
 	for _, field := range fdecl.Type.Params.List {
+		fmt.Println("param")
 		if field.Names == nil {
-			// TODO: Param type
-			params = append(params, jen.Id("Type"))
+			params = append(params, jen.Id(typeSpecStr(&field.Type)))
 		} else {
 			lastIdx := len(field.Names) - 1
 			for idx, ident := range field.Names {
 				if idx != lastIdx {
-					params = append(params, jen.Id(ident.Name))
+					params = append(params, jen.Id(argName(ident.Name)))
 				} else {
-					// TODO: Param type
-					params = append(params, jen.Id(ident.Name).Id("Type"))
+					params = append(params, jen.Id(
+						argName(ident.Name)).Id(typeSpecStr(&field.Type)))
 				}
 			}
 		}
 	}
 	stmt = stmt.Params(params...)
 	// TODO: Function type
-	stmt.String()
+	stmt.Id("Type")
 }
 
 /*
