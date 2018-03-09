@@ -110,14 +110,24 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	var retField *ast.Field = nil
 	if fdecl.Type.Results.List != nil {
 		lastFieldIdx := len(fdecl.Type.Results.List) - 1
-		allparams = append(allparams, fdecl.Type.Results.List[:lastFieldIdx]...)
 		retField = fdecl.Type.Results.List[lastFieldIdx]
+		_, isArray := retField.Type.(*ast.ArrayType)
+		if isArray || retField.Type.(*ast.Ident).IsExported() {
+			allparams = append(allparams, fdecl.Type.Results.List[:]...)
+			retField = nil
+		} else {
+			allparams = append(allparams, fdecl.Type.Results.List[:lastFieldIdx]...)
+		}
 	}
 	for fieldIdx, field := range allparams {
 		if field.Names == nil {
+			// Field in return types list
+			typeExpr := typeSpecStr(&field.Type)
+			if typeExpr == "C.GoSlice" {
+				typeExpr = "*C.GoSlice"
+			}
 			params = append(params, jen.Id(
-				argName("arg"+fmt.Sprintf("%d", fieldIdx))).Id(
-				typeSpecStr(&field.Type)))
+				argName("arg"+fmt.Sprintf("%d", fieldIdx))).Id(typeExpr))
 		} else {
 			lastNameIdx := len(field.Names) - 1
 			for nameIdx, ident := range field.Names {
@@ -129,15 +139,18 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 				}
 			}
 		}
-
 	}
 
 	stmt = stmt.Params(params...)
 	// TODO: Function type
 	if retField != nil {
-		fmt.Println("Hasret")
+		retName := retField.Type.(*ast.Ident).Name
+		if retName == "error" {
+			stmt = stmt.Id("C.uint")
+		} else {
+			stmt = stmt.Id(retName)
+		}
 	}
-	stmt.Id("Type")
 }
 
 /*
