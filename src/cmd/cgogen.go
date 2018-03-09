@@ -150,6 +150,14 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		} else {
 			stmt = stmt.Id(retName)
 		}
+		stmt.Block(
+			jen.Comment("TODO: Implement"),
+			jen.Return(),
+		)
+	} else {
+		stmt.Block(
+			jen.Comment("TODO: Implement"),
+		)
 	}
 }
 
