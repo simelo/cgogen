@@ -44,6 +44,11 @@ func main() {
 	}
 
 	outFile := jen.NewFile("main")
+	outFile.CgoPreamble(`
+	#include <string.h>
+  #include <stdlib.h>
+  
+  #include "../../include/skytypes.h"`)
 
 	for _, _decl := range fast.Decls {
 		if decl, ok := (_decl).(*ast.FuncDecl); ok {
@@ -101,7 +106,6 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	var params jen.Statement
 	if receiver := fdecl.Recv; receiver != nil {
 		// Method
-		// TODO: Param type
 		recvParam := jen.Id(argName(receiver.List[0].Names[0].Name))
 		recvParam = recvParam.Id(typeSpecStr(&receiver.List[0].Type))
 		params = append(params, recvParam)
@@ -140,9 +144,29 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 			}
 		}
 	}
-
 	stmt = stmt.Params(params...)
-	// TODO: Function type
+
+	var callparams []jen.Code
+	for _, field := range fdecl.Type.Params.List {
+		for _, name := range field.Names {
+			callparams = append(callparams, *jen.Id(name.Name)...)
+		}
+	}
+
+	blockParams := []jen.Code{
+		jen.Comment("TODO: Implement"),
+	}
+	if fdecl.Recv != nil {
+		blockParams = append(blockParams,
+			jen.Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...),
+		)
+	} else {
+		blockParams = append(blockParams,
+			jen.Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
+				fdecl.Name.Name).Call(callparams...),
+		)
+	}
+
 	if retField != nil {
 		retName := retField.Type.(*ast.Ident).Name
 		if retName == "error" {
@@ -150,15 +174,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		} else {
 			stmt = stmt.Id(retName)
 		}
-		stmt.Block(
-			jen.Comment("TODO: Implement"),
-			jen.Return(),
-		)
-	} else {
-		stmt.Block(
-			jen.Comment("TODO: Implement"),
-		)
 	}
+	stmt.Block(blockParams...)
 }
 
 /*
