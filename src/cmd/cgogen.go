@@ -69,28 +69,34 @@ func isAsciiUpper(c rune) bool {
 }
 
 func typeSpecStr(_typeExpr *ast.Expr) string {
+	addPointer := false
 	spec := ""
-	if starExpr, isStar := (*_typeExpr).(*ast.StarExpr); isStar {
-		spec += "*"
-		_typeExpr = &starExpr.X
-	}
-	typeName := ""
-	isIdent := false
-	if identExpr, _isIdent := (*_typeExpr).(*ast.Ident); _isIdent {
-		typeName = identExpr.Name
-		isIdent = true
-	}
-	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
-		typeName = "GoSlice"
-	}
-	if isAsciiUpper(rune(typeName[0])) {
-		if isIdent && spec == "" {
-			spec += "*C."
-		} else {
-			spec += "C."
+	for _typeExpr != nil {
+		if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
+			spec += "[]"
+			_typeExpr = &arrayExpr.Elt
+		}
+		if starExpr, isStar := (*_typeExpr).(*ast.StarExpr); isStar {
+			spec += "*"
+			_typeExpr = &starExpr.X
+		}
+		if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
+			typeName := identExpr.Name
+			isExported := isAsciiUpper(rune(typeName[0]))
+			if spec == "" && !addPointer && isExported {
+				addPointer = true
+			}
+			if isExported {
+				spec += "C."
+			}
+			spec += typeName
+			_typeExpr = nil
 		}
 	}
-	return spec + typeName
+	if addPointer {
+		return "*" + spec
+	}
+	return spec
 }
 
 func argName(name string) string {
@@ -101,15 +107,28 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	if !fdecl.Name.IsExported() {
 		return
 	}
-	stmt := outFile.Func().Id(
-		"SKY_" + fast.Name.Name + "_" + fdecl.Name.Name)
+
+	funcName := fdecl.Name.Name
 	var params jen.Statement
 	if receiver := fdecl.Recv; receiver != nil {
 		// Method
+		_type := &receiver.List[0].Type
+		typeName := ""
+		if starExpr, isPointerRecv := (*_type).(*ast.StarExpr); isPointerRecv {
+			_type = &starExpr.X
+		}
+		if identExpr, isIdent := (*_type).(*ast.Ident); isIdent {
+			typeName = identExpr.Name
+		}
 		recvParam := jen.Id(argName(receiver.List[0].Names[0].Name))
-		recvParam = recvParam.Id(typeSpecStr(&receiver.List[0].Type))
+		recvParam = recvParam.Id(typeSpecStr(_type))
 		params = append(params, recvParam)
+		funcName = typeName + "_" + funcName
 	}
+
+	stmt := outFile.Func().Id(
+		"SKY_" + fast.Name.Name + "_" + funcName)
+
 	allparams := fdecl.Type.Params.List[:]
 	var retField *ast.Field = nil
 	if fdecl.Type.Results.List != nil {
@@ -126,12 +145,12 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	for fieldIdx, field := range allparams {
 		if field.Names == nil {
 			// Field in return types list
-			typeExpr := typeSpecStr(&field.Type)
-			if typeExpr == "C.GoSlice" {
-				typeExpr = "*C.GoSlice"
+			typeName := typeSpecStr(&field.Type)
+			if rune(typeName[0]) == '[' {
+				typeName = "*C.GoSlice_"
 			}
 			params = append(params, jen.Id(
-				argName("arg"+fmt.Sprintf("%d", fieldIdx))).Id(typeExpr))
+				argName("arg"+fmt.Sprintf("%d", fieldIdx))).Id(typeName))
 		} else {
 			lastNameIdx := len(field.Names) - 1
 			for nameIdx, ident := range field.Names {
