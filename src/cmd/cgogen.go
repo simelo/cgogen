@@ -126,12 +126,12 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		funcName = typeName + "_" + funcName
 	}
 
-	stmt := outFile.Func().Id(
-		"SKY_" + fast.Name.Name + "_" + funcName)
+	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
+	stmt := outFile.Func().Comment("export " + cfuncName).Id(cfuncName)
 
 	allparams := fdecl.Type.Params.List[:]
 	var retField *ast.Field = nil
-	if fdecl.Type.Results.List != nil {
+	if fdecl.Type.Results != nil && fdecl.Type.Results.List != nil {
 		lastFieldIdx := len(fdecl.Type.Results.List) - 1
 		retField = fdecl.Type.Results.List[lastFieldIdx]
 		_, isArray := retField.Type.(*ast.ArrayType)
