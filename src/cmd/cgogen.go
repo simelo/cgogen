@@ -29,6 +29,26 @@ var (
 	}
 )
 
+var typesMap = map[string]string{
+	  "int": "GoInt_",
+	  "uint": "GoUint_",
+	  "int8": "GoInt8_",
+	  "int16": "GoInt16_",
+	  "int32": "GoInt32_",
+	  "int64": "GoInt64_",
+	  "byte": "GoUint8_",
+	  "uint8": "GoUint8_",
+	  "uint16": "GoUint16_",
+	  "uint32": "GoUint32_",
+	  "uint64": "GoUint64_",
+	  "float32" : "GoFloat32_",
+	  "float64" : "GoFloat64_",
+	  "complex64" : "GoComplex64_",
+	  "complex128" : "GoComplex128_",
+	  "string" : "GoString_",
+	  "bool" : "bool",
+	}
+
 func main() {
 	cfg.register()
 	flag.Parse()
@@ -54,21 +74,31 @@ func main() {
 	}
 
 	outFile := jen.NewFile("main")
+	
+	//Traverse all type declarations to convert them to c type definitions
+	typeDefs := make ( [](*ast.GenDecl), 0 )
+	for _, _decl := range fast.Decls {
+		if decl, ok := (_decl).(*ast.GenDecl); ok {
+			if decl.Tok == token.TYPE {
+				typeDefs = append ( typeDefs, decl )
+			}
+		}
+	}
+	ctype_defs := processTypeDefs(fast, typeDefs)
+	
 	outFile.CgoPreamble(`
   #include <string.h>
   #include <stdlib.h>
   
   #include "../../include/skytypes.h"`)
+	outFile.CgoPreamble(ctype_defs)
 
+	
+  
 	for _, _decl := range fast.Decls {
 		if decl, ok := (_decl).(*ast.FuncDecl); ok {
 			processFunc(fast, decl, outFile)
 		}
-		/*
-			if decl, ok := _decl.(ast.FuncDecl); ok {
-				processType(fast, decl, outFile)
-			}
-		*/
 	}
 
 	fmt.Printf("%#v", outFile)
@@ -257,8 +287,140 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	stmt.Block(blockParams...)
 }
 
-/*
-func processType(fast *ast.File, tdecl *ast.TypeDecl, outFile *jen.File) {
-
+/* Returns the corresponding C type for a GO type*/
+func goTypeToCType(goType string) string {
+	if val, ok := typesMap[goType]; ok {
+		return val
+	} else {
+		return goType
+	}
 }
-*/
+
+/* Process a type expression. Returns the code in C for the type and ok if successfull */
+func processTypeExpression(fast *ast.File, type_expr ast.Expr, 
+							defined_types *[]string, 
+							forwards_declarations *[]string, depth int) (string, bool) {
+	c_code := ""
+	result := false
+	
+	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
+		c_code += "struct{\n"
+		error := false
+		for _, field := range typeStruct.Fields.List{
+			type_code, result := processTypeExpression(fast, field.Type, defined_types, forwards_declarations, depth + 1)
+			if result {
+				for i := 0; i < depth * 4; i++{
+					c_code += " "
+				}
+				c_code += type_code
+				for i, fieldName := range field.Names{
+					if i > 0{
+						c_code += ", "
+					}
+					c_code += fieldName.Name
+				}
+				c_code += ";\n"
+			} else {
+				error = true
+			}
+		}
+		for i := 0; i < (depth - 1) * 4; i++{
+			c_code += " "
+		}
+		c_code += "}"
+		result = !error
+	}else if _, isArray := (type_expr).(*ast.ArrayType); isArray {
+		c_code += "GoSlice_ "
+		result = true
+	}else if _, isFunc := (type_expr).(*ast.FuncType); isFunc {
+		c_code += "Handle "
+		result = true
+	}else if _, isIntf := (type_expr).(*ast.InterfaceType); isIntf {
+		c_code += "GoInterface_ "
+		result = true
+	}else if _, isChan := (type_expr).(*ast.ChanType); isChan {
+		c_code += "GoChan_ "
+		result = true
+	}else if _, isMap := (type_expr).(*ast.MapType); isMap {
+		c_code += "GoMap_ "
+		result = true
+	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
+		targetTypeExpr := starExpr.X
+		type_code, ok := processTypeExpression(fast, targetTypeExpr, defined_types, forwards_declarations, depth + 1)
+		if ok {
+			c_code += type_code
+			c_code += "* "
+			result = true
+		}
+	}else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
+		c_code = goTypeToCType(identExpr.Name) + " "
+		type_found := false
+		for _, defined_type := range *defined_types{
+			if defined_type == identExpr.Name{
+				type_found = true
+			}
+		}
+		if !type_found{
+			if forwards_declarations != nil {
+				*forwards_declarations = append(*forwards_declarations, identExpr.Name)
+				result = true
+			} else {
+				result = false
+			}
+		} else {
+			result = true
+		}
+	}
+	return c_code, result
+}
+
+/* Process a type definition in GO and returns the c code for the definition */
+func processTypeDef(fast *ast.File, tdecl *ast.GenDecl, 
+					defined_types *[]string, forwards_declarations *[]string) (string, bool) {
+	result_code := ""
+	result := true
+	for _, s := range tdecl.Specs{
+		if typeSpec, isTypeSpec := (s).(*ast.TypeSpec); isTypeSpec {
+			type_c_code, ok := processTypeExpression(fast, typeSpec.Type, defined_types, forwards_declarations, 1)
+			if ok {
+				result_code += "typedef "
+				result_code += type_c_code
+				result_code += typeSpec.Name.Name
+				result_code += ";\n"
+				*defined_types = append( *defined_types, typeSpec.Name.Name )
+			} else {
+				result = false
+			}
+		}
+	}
+	return result_code, result
+}
+
+/* Process all type definitions. Returns c code for all the defintions */
+func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl) string {
+	result_code := ""
+	var defined_types []string
+	for key, _ := range typesMap {
+		defined_types = append( defined_types, key )
+	}
+	
+	unprocessed := len( typeDecls )
+	went_blank := false
+	for unprocessed > 0 && !went_blank {
+		went_blank = true
+		for index, typeDecl := range typeDecls{
+			if typeDecl != nil {
+				typeCode, ok := processTypeDef(fast, typeDecl, &defined_types, nil)
+				if ok {
+					went_blank = false
+					typeDecls[index] = nil
+					result_code += typeCode
+					unprocessed -= 1
+				}
+			}
+		}
+	}
+	//TODO: if unprocessed > 0 then there cyclic type references. Use forward declarations.
+	return result_code
+}
+
