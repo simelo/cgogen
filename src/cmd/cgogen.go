@@ -196,6 +196,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	}
 
 	applog("Processing %v \n", funcName)
+	var blockParams []jen.Code
 	var params jen.Statement
 	if receiver := fdecl.Recv; receiver != nil {
 		// Method
@@ -207,10 +208,12 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		if identExpr, isIdent := (*_type).(*ast.Ident); isIdent {
 			typeName = identExpr.Name
 		}
-		recvParam := jen.Id(argName(receiver.List[0].Names[0].Name))
+		recvParamName := receiver.List[0].Names[0].Name
+		recvParam := jen.Id(argName(recvParamName))
 		recvParam = recvParam.Id(typeSpecStr(_type))
 		params = append(params, recvParam)
 		funcName = typeName + "_" + funcName
+		blockParams = append( blockParams, jen.Id(recvParamName).Op(":=").Id(argName(recvParamName)) )
 	}
 
 	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
@@ -253,6 +256,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 					params = append(params, jen.Id(
 						argName(ident.Name)).Id(typeSpecStr(&field.Type)))
 				}
+				blockParams = append( blockParams, jen.Id(ident.Name).Op(":=").Id(argName(ident.Name)) )
 			}
 		}
 	}
@@ -265,9 +269,6 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		}
 	}
 
-	blockParams := []jen.Code{
-		jen.Comment("TODO: Implement"),
-	}
 	retName := ""
 	if retField != nil {
 		retName = typeSpecStr(&retField.Type)
