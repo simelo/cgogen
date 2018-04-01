@@ -187,6 +187,7 @@ func argName(name string) string {
 }
 
 func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
+
 	funcName := fdecl.Name.Name
 
 	if !fdecl.Name.IsExported() {
@@ -217,6 +218,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	stmt = outFile.Func().Id(cfuncName)
 
 	allparams := fdecl.Type.Params.List[:]
+	return_fields_index := len(allparams)
 	var retField *ast.Field = nil
 	if fdecl.Type.Results != nil && fdecl.Type.Results.List != nil {
 		lastFieldIdx := len(fdecl.Type.Results.List) - 1
@@ -232,8 +234,9 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 			allparams = append(allparams, fdecl.Type.Results.List[:lastFieldIdx]...)
 		}
 	}
+
 	for fieldIdx, field := range allparams {
-		if field.Names == nil {
+		if fieldIdx >= return_fields_index {
 			// Field in return types list
 			typeName := typeSpecStr(&field.Type)
 			if rune(typeName[0]) == '[' {
@@ -265,24 +268,47 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	blockParams := []jen.Code{
 		jen.Comment("TODO: Implement"),
 	}
-	if fdecl.Recv != nil {
-		blockParams = append(blockParams,
-			jen.Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...),
-		)
-	} else {
-		blockParams = append(blockParams,
-			jen.Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
-				fdecl.Name.Name).Call(callparams...),
-		)
+	retName := ""
+	if retField != nil {
+		retName = typeSpecStr(&retField.Type)
+		if retName == "error" {
+			retName = "C.uint"
+		}
+		blockParams = append(blockParams, jen.Var().Id(argName("return_var")).Id(retName) )
 	}
+	
+	var retvars []jen.Code
+	if return_fields_index < len(allparams) {
+		for i := return_fields_index; i < len(allparams); i++ {
+			retvars = append(retvars, jen.Id(argName("arg"+fmt.Sprintf("%d", i))))
+		}		
+	}
+	if retField != nil {
+		retvars = append(retvars, jen.Id(argName("return_var")))
+	}
+	var call_func_code jen.Code
+	if len(retvars) > 0 {
+		if fdecl.Recv != nil {
+			call_func_code = 
+				jen.List(retvars...).Op("=").Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
+		} else {
+			call_func_code = 
+				jen.List(retvars...).Op("=").Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
+					fdecl.Name.Name).Call(callparams...)
+		}
+	} else {
+		if fdecl.Recv != nil {
+			call_func_code = jen.Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
+		} else {
+			call_func_code = jen.Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
+					fdecl.Name.Name).Call(callparams...)
+		}
+	}
+	blockParams = append(blockParams, call_func_code,)
 
 	if retField != nil {
-		retName := typeSpecStr(&retField.Type)
-		if retName == "error" {
-			stmt = stmt.Id("C.uint")
-		} else {
-			stmt = stmt.Id(retName)
-		}
+		stmt = stmt.Id(retName)
+		blockParams = append( blockParams, jen.Return().Id(argName("return_var")) )
 	}
 	stmt.Block(blockParams...)
 }
