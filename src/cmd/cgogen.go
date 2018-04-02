@@ -241,7 +241,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	for fieldIdx, field := range allparams {
 		if fieldIdx >= return_fields_index {
 			// Field in return types list
-			typeName := typeSpecStr(&field.Type)
+			typeName := "*" + typeSpecStr(&field.Type)
 			if rune(typeName[0]) == '[' {
 				typeName = "*C.GoSlice_"
 			}
@@ -281,7 +281,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	var retvars []jen.Code
 	if return_fields_index < len(allparams) {
 		for i := return_fields_index; i < len(allparams); i++ {
-			retvars = append(retvars, jen.Id(argName("arg"+fmt.Sprintf("%d", i))))
+			retvars = append(retvars, jen.Op("*").Id(argName("arg"+fmt.Sprintf("%d", i))))
 		}		
 	}
 	if retField != nil {
