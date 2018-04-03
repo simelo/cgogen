@@ -47,6 +47,7 @@ var typesMap = map[string]string{
 	  "string" : "GoString_",
 	  "bool" : "bool",
 	}
+var return_var_name = "____return_var"
 
 func main() {
 	cfg.register()
@@ -270,16 +271,6 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 			callparams = append(callparams, *jen.Id(name.Name)...)
 		}
 	}
-
-	retName := ""
-	if retField != nil {
-		retName = typeSpecStr(&retField.Type)
-		if retName == "error" {
-			retName = "C.uint32"
-		}
-		blockParams = append(blockParams, jen.Var().Id(argName("return_var")).Id(retName) )
-	}
-	
 	var retvars []jen.Code
 	if return_fields_index < len(allparams) {
 		for i := return_fields_index; i < len(allparams); i++ {
@@ -287,7 +278,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		}		
 	}
 	if retField != nil {
-		retvars = append(retvars, jen.Id(argName("return_var")))
+		retvars = append(retvars, jen.Id(return_var_name))
 	}
 	var call_func_code jen.Code
 	if len(retvars) > 0 {
@@ -310,8 +301,12 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	blockParams = append(blockParams, call_func_code,)
 
 	if retField != nil {
-		stmt = stmt.Id(retName)
-		blockParams = append( blockParams, jen.Return().Id(argName("return_var")) )
+		retName := typeSpecStr(&retField.Type)
+		if retName == "error" {
+			retName = "C.uint32"
+		}
+		stmt = stmt.Parens(jen.Id(return_var_name).Id(retName))
+		blockParams = append(blockParams, jen.Return())
 	}
 	stmt.Block(blockParams...)
 }
