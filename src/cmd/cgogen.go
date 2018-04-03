@@ -114,7 +114,8 @@ func main() {
 	}
 	if cfg.ProcessFunctions {
 		if cfg.OutputFileGO != "" {
-			outFile.Save(cfg.OutputFileGO)
+			err := outFile.Save(cfg.OutputFileGO)
+			check(err)
 		} else {
 			fmt.Printf("%#v", outFile)
 		}
@@ -187,7 +188,8 @@ func typeSpecStr(_typeExpr *ast.Expr) string {
 				typeName = selExpr.Sel.Name
 			}
 			isExported := isAsciiUpper(rune(typeName[0]))
-			if spec == "" && !addPointer && isExported {
+			isBasicType := isBasicGoType( typeName )
+			if spec == "" && !addPointer && (isExported || isBasicType) {
 				addPointer = true
 			}
 			if isExported {
@@ -224,6 +226,11 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 
 	applog("Processing %v \n", funcName)
 	var blockParams []jen.Code
+	
+	blockParams = append( blockParams, jen.Id(return_var_name).Op("=").Nil() )
+	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call()
+	blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
+	
 	var params jen.Statement
 	if receiver := fdecl.Recv; receiver != nil {
 		// Method
@@ -250,18 +257,24 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	allparams := fdecl.Type.Params.List[:]
 	return_fields_index := len(allparams)
 	var retField *ast.Field = nil
+	
 	if fdecl.Type.Results != nil && fdecl.Type.Results.List != nil {
-		lastFieldIdx := len(fdecl.Type.Results.List) - 1
-		retField = fdecl.Type.Results.List[lastFieldIdx]
-		_, isArray := retField.Type.(*ast.ArrayType)
-		_, isQual := retField.Type.(*ast.SelectorExpr)
-		_, isIdent := retField.Type.(*ast.Ident)
-
-		if isArray || isQual || (isIdent && retField.Type.(*ast.Ident).IsExported()) {
-			allparams = append(allparams, fdecl.Type.Results.List[:]...)
-			retField = nil
+		//Find the return argument of type error.
+		//It should always be the last argument but search just in case
+		error_index := -1
+		for index, field := range fdecl.Type.Results.List {
+			identExpr, isIdent := (field.Type).(*ast.Ident)
+			if isIdent && identExpr.Name == "error" {
+				error_index = index
+				break
+			}
+		}
+		if error_index >= 0 {
+			retField = fdecl.Type.Results.List[error_index]
+			return_params := append(fdecl.Type.Results.List[0:error_index], fdecl.Type.Results.List[error_index+1:]...)
+			allparams = append(allparams, return_params...)
 		} else {
-			allparams = append(allparams, fdecl.Type.Results.List[:lastFieldIdx]...)
+			allparams = append(allparams, fdecl.Type.Results.List[:]...)
 		}
 	}
 
@@ -298,7 +311,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	var retvars []jen.Code
 	if return_fields_index < len(allparams) {
 		for i := return_fields_index; i < len(allparams); i++ {
-			retvars = append(retvars, jen.Id(argName("arg"+fmt.Sprintf("%d", i))))
+			retvars = append(retvars, jen.Op("*").Id(argName("arg"+fmt.Sprintf("%d", i))))
 		}		
 	}
 	if retField != nil {
@@ -323,15 +336,10 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		}
 	}
 	blockParams = append(blockParams, call_func_code,)
-
-	if retField != nil {
-		retName := typeSpecStr(&retField.Type)
-		if retName == "error" {
-			retName = "C.uint32"
-		}
-		stmt = stmt.Parens(jen.Id(return_var_name).Id(retName))
-		blockParams = append(blockParams, jen.Return())
-	}
+	
+	stmt = stmt.Parens(jen.Id(return_var_name).Id("error"))
+	blockParams = append(blockParams, jen.Return())
+	
 	stmt.Block(blockParams...)
 }
 
@@ -341,6 +349,14 @@ func goTypeToCType(goType string) string {
 		return val
 	} else {
 		return goType
+	}
+}
+
+func isBasicGoType(goType string) bool {
+	if _, ok := typesMap[goType]; ok {
+		return true
+	} else {
+		return false
 	}
 }
 
