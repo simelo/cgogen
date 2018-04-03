@@ -12,13 +12,22 @@ import (
 )
 
 type Config struct {
-	Path    string
-	Verbose bool
+	Path    			string
+	Verbose 			bool
+	ProcessFunctions	bool
+	ProcessTypes		bool
+	OutputFileGO 		string
+	OutputFileCH		string
 }
 
 func (c *Config) register() {
 	flag.StringVar(&c.Path, "i", "", "PATH to source file")
+	flag.StringVar(&c.OutputFileGO, "g", "", "PATH to destination file for go code")
+	flag.StringVar(&c.OutputFileCH, "h", "", "PATH to destination file for C code")
 	flag.BoolVar(&c.Verbose, "v", false, "Print debug message to stdout")
+	flag.BoolVar(&c.ProcessFunctions, "f", false, "Process functions")
+	flag.BoolVar(&c.ProcessTypes, "t", false, "Process Types")
+	
 }
 
 var (
@@ -59,50 +68,65 @@ func main() {
 
 	applog("Opening %v \n", cfg.Path)
 	fo, err := os.Open(cfg.Path)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	check(err)
 
 	defer fo.Close()
 
 	fset := token.NewFileSet()
 	fast, err := parser.ParseFile(fset, "", fo, parser.AllErrors)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	check(err)
 
 	outFile := jen.NewFile("main")
-	
-	//Traverse all type declarations to convert them to c type definitions
-	typeDefs := make ( [](*ast.GenDecl), 0 )
-	for _, _decl := range fast.Decls {
-		if decl, ok := (_decl).(*ast.GenDecl); ok {
-			if decl.Tok == token.TYPE {
-				typeDefs = append ( typeDefs, decl )
-			}
-		}
-	}
-	ctype_defs := processTypeDefs(fast, typeDefs)
 	
 	outFile.CgoPreamble(`
   #include <string.h>
   #include <stdlib.h>
   
   #include "../../include/skytypes.h"`)
-	outFile.CgoPreamble(ctype_defs)
 
 	
-  
+	typeDefs := make ( [](*ast.GenDecl), 0 )
 	for _, _decl := range fast.Decls {
-		if decl, ok := (_decl).(*ast.FuncDecl); ok {
-			processFunc(fast, decl, outFile)
+		if cfg.ProcessFunctions {
+			if decl, ok := (_decl).(*ast.FuncDecl); ok {
+				processFunc(fast, decl, outFile)
+			} 
+		}
+		if cfg.ProcessTypes {
+			if decl, ok := (_decl).(*ast.GenDecl); ok {
+				if decl.Tok == token.TYPE {
+					typeDefs = append ( typeDefs, decl )
+				}
+			}
 		}
 	}
-
-	fmt.Printf("%#v", outFile)
+	if cfg.ProcessTypes {
+		typeDefsCode := processTypeDefs(fast, typeDefs)
+		if cfg.OutputFileCH != "" {
+			f, err := os.Create(cfg.OutputFileCH)
+			check(err)
+			defer f.Close()
+			f.WriteString( typeDefsCode )
+			f.Sync()
+		} else {
+			fmt.Println(typeDefsCode)
+		}
+	}
+	if cfg.ProcessFunctions {
+		if cfg.OutputFileGO != "" {
+			outFile.Save(cfg.OutputFileGO)
+		} else {
+			fmt.Printf("%#v", outFile)
+		}
+	}
 	applog("Finished %v", cfg.Path)
+}
+
+func check(err error) {
+    if err != nil {
+		fmt.Println(err)
+		return
+	}
 }
 
 func isAsciiUpper(c rune) bool {
