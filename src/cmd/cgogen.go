@@ -275,7 +275,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	if retField != nil {
 		retName = typeSpecStr(&retField.Type)
 		if retName == "error" {
-			retName = "C.uint"
+			retName = "C.uint32"
 		}
 		blockParams = append(blockParams, jen.Var().Id(argName("return_var")).Id(retName) )
 	}
