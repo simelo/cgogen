@@ -231,7 +231,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	var blockParams []jen.Code
 	
 	blockParams = append( blockParams, jen.Id(return_var_name).Op("=").Nil() )
-	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call()
+	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id("recover").Call())
 	blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
 	
 	var params jen.Statement
@@ -343,7 +343,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	}
 	blockParams = append(blockParams, call_func_code,)
 	
-	stmt = stmt.Parens(jen.Id(return_var_name).Id("error"))
+	stmt = stmt.Parens(jen.Id(return_var_name).Id("uint32"))
 	if retField != nil {
 		blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Id(resultName(return_var_name)))
 	}
