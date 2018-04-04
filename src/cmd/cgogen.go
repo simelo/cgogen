@@ -188,8 +188,7 @@ func typeSpecStr(_typeExpr *ast.Expr) string {
 				typeName = selExpr.Sel.Name
 			}
 			isExported := isAsciiUpper(rune(typeName[0]))
-			isBasicType := isBasicGoType( typeName )
-			if spec == "" && !addPointer && (isExported || isBasicType) {
+			if spec == "" && !addPointer && (isExported) {
 				addPointer = true
 			}
 			if isExported {
@@ -210,6 +209,10 @@ func typeSpecStr(_typeExpr *ast.Expr) string {
 
 func argName(name string) string {
 	return "_" + name
+}
+
+func resultName(name string) string {
+	return "__" + name
 }
 
 func convertCVarToGoVar(){
@@ -285,6 +288,9 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 			if rune(typeName[0]) == '[' {
 				typeName = "*C.GoSlice_"
 			}
+			if isBasicGoType(typeName) {
+				typeName = "*" + typeName
+			}
 			params = append(params, jen.Id(
 				argName("arg"+fmt.Sprintf("%d", fieldIdx))).Id(typeName))
 		} else {
@@ -311,20 +317,20 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	var retvars []jen.Code
 	if return_fields_index < len(allparams) {
 		for i := return_fields_index; i < len(allparams); i++ {
-			retvars = append(retvars, jen.Op("*").Id(argName("arg"+fmt.Sprintf("%d", i))))
+			retvars = append(retvars, jen.Id(resultName("arg"+fmt.Sprintf("%d", i))))
 		}		
 	}
 	if retField != nil {
-		retvars = append(retvars, jen.Id(return_var_name))
+		retvars = append(retvars, jen.Id(resultName(return_var_name)))
 	}
 	var call_func_code jen.Code
 	if len(retvars) > 0 {
 		if fdecl.Recv != nil {
 			call_func_code = 
-				jen.List(retvars...).Op("=").Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
+				jen.List(retvars...).Op(":=").Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
 		} else {
 			call_func_code = 
-				jen.List(retvars...).Op("=").Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
+				jen.List(retvars...).Op(":=").Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
 					fdecl.Name.Name).Call(callparams...)
 		}
 	} else {
@@ -338,6 +344,9 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	blockParams = append(blockParams, call_func_code,)
 	
 	stmt = stmt.Parens(jen.Id(return_var_name).Id("error"))
+	if retField != nil {
+		blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Id(resultName(return_var_name)))
+	}
 	blockParams = append(blockParams, jen.Return())
 	
 	stmt.Block(blockParams...)
