@@ -61,6 +61,7 @@ var arrayTypes = []string{
 }	
 	
 var return_var_name = "____return_var"
+var deal_out_string_as_gostring = true
 
 func main() {
 	cfg.register()
@@ -296,8 +297,9 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 			typeName := typeSpecStr(&field.Type)
 			if rune(typeName[0]) == '[' {
 				typeName = "*C.GoSlice_"
-			}
-			if isBasicGoType(typeName) {
+			} else if(deal_out_string_as_gostring && typeName == "string") {
+				typeName = "*C.GoString_"
+			} else if isBasicGoType(typeName) {
 				typeName = "*" + typeName
 			}
 			paramName := argName("arg"+fmt.Sprintf("%d", fieldIdx))
@@ -400,7 +402,9 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
 		return getCodeToConvertOutParameter(_type, name)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
-		if isBasicGoType(typeName) {
+		if typeName == "string" {
+			return jen.Id("copyString").Call(jen.Id(argName(name)), jen.Id(name))
+		} else if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
 		} else if isSkyArrayType(typeName) {
 			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]"),
