@@ -402,7 +402,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
 		return getCodeToConvertOutParameter(_type, name)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
-		if typeName == "string" {
+		if deal_out_string_as_gostring && typeName == "string" {
 			return jen.Id("copyString").Call(jen.Id(argName(name)), jen.Id(name))
 		} else if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
