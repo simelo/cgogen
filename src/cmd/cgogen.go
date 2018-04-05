@@ -27,7 +27,6 @@ func (c *Config) register() {
 	flag.BoolVar(&c.Verbose, "v", false, "Print debug message to stdout")
 	flag.BoolVar(&c.ProcessFunctions, "f", false, "Process functions")
 	flag.BoolVar(&c.ProcessTypes, "t", false, "Process Types")
-	
 }
 
 var (
@@ -250,7 +249,10 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		recvParam = recvParam.Id(typeSpecStr(_type))
 		params = append(params, recvParam)
 		funcName = typeName + "_" + funcName
-		blockParams = append( blockParams, jen.Id(recvParamName).Op(":=").Id(argName(recvParamName)) )
+		convertCode := getCodeToConvertInParameter(_type, recvParamName)
+		if convertCode != nil {
+			blockParams = append( blockParams, convertCode )
+		}
 	}
 
 	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
@@ -281,6 +283,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		}
 	}
 
+	var output_vars_convert_code []jen.Code
+	
 	for fieldIdx, field := range allparams {
 		if fieldIdx >= return_fields_index {
 			// Field in return types list
@@ -291,8 +295,13 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 			if isBasicGoType(typeName) {
 				typeName = "*" + typeName
 			}
-			params = append(params, jen.Id(
-				argName("arg"+fmt.Sprintf("%d", fieldIdx))).Id(typeName))
+			paramName := argName("arg"+fmt.Sprintf("%d", fieldIdx))
+			params = append(params, jen.Id(paramName).Id(typeName))
+			convertCode := getCodeToConvertOutParameter(&field.Type, paramName)
+			if convertCode != nil {
+				output_vars_convert_code = append( output_vars_convert_code, convertCode )
+			}
+			
 		} else {
 			lastNameIdx := len(field.Names) - 1
 			for nameIdx, ident := range field.Names {
@@ -302,7 +311,10 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 					params = append(params, jen.Id(
 						argName(ident.Name)).Id(typeSpecStr(&field.Type)))
 				}
-				blockParams = append( blockParams, jen.Id(ident.Name).Op(":=").Id(argName(ident.Name)) )
+				convertCode := getCodeToConvertInParameter(&field.Type, ident.Name)
+				if convertCode != nil {
+					blockParams = append( blockParams, convertCode )
+				}
 			}
 		}
 	}
@@ -347,9 +359,46 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	if retField != nil {
 		blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Id("libErrorCode").Call(jen.Id(resultName(return_var_name))))
 	}
+	blockParams = append(blockParams, output_vars_convert_code...)
 	blockParams = append(blockParams, jen.Return())
 	
 	stmt.Block(blockParams...)
+}
+
+/*Returns jen code to convert an input parameter from wrapper to original function*/
+func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string) jen.Code{
+	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
+		return jen.Id(name).Op(":=").Id(argName(name))
+	} else if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
+		_type := &starExpr.X
+		return getCodeToConvertInParameter(_type, name)
+	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
+		typeName := identExpr.Name
+		if isBasicGoType(typeName) {
+			return jen.Id(name).Op(":=").Id(argName(name))
+		} else {
+			return jen.Id(name).Op(":=").Id("inplace"+typeName).Call(jen.Id(argName(name)));
+		}
+	}
+	return nil
+}
+
+/*Returns jen Code to convert an output parameter from original to wrapper function*/
+func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
+	if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
+		_type := &starExpr.X
+		return getCodeToConvertOutParameter(_type, name)
+	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
+		typeName := identExpr.Name
+		if isBasicGoType(typeName) {
+			return jen.Op("*").Id(name).Op("=").Id(argName(name))
+		} else {
+			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)),
+				jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
+				jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
+		}
+	}
+	return nil
 }
 
 /* Returns the corresponding C type for a GO type*/
@@ -493,7 +542,7 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl) string {
 			}
 		}
 	}
-	//TODO: if unprocessed > 0 then there cyclic type references. Use forward declarations.
+	//TODO: if unprocessed > 0 then there are cyclic type references. Use forward declarations.
 	return result_code
 }
 
