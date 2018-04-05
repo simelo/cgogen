@@ -393,7 +393,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
 		if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
 		} else {
-			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)),
+			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]"),
 				jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
 				jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
 		}
