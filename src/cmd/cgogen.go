@@ -385,7 +385,10 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string) jen.Code{
 
 /*Returns jen Code to convert an output parameter from original to wrapper function*/
 func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
-	if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
+	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
+		return jen.Id("copyToGoSlice").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name))),
+			jen.Id(name))
+	} else if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
 		_type := &starExpr.X
 		return getCodeToConvertOutParameter(_type, name)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
