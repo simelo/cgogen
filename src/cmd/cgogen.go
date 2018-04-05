@@ -55,6 +55,11 @@ var typesMap = map[string]string{
 	  "string" : "GoString_",
 	  "bool" : "bool",
 	}
+
+var arrayTypes = []string{
+	"PubKey", "SHA256", "Sig", "SecKey",
+}	
+	
 var return_var_name = "____return_var"
 
 func main() {
@@ -376,6 +381,8 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string) jen.Code{
 		typeName := identExpr.Name
 		if isBasicGoType(typeName) {
 			return jen.Id(name).Op(":=").Id(argName(name))
+		} else if isSkyArrayType(typeName) {
+			return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual("cipher",typeName)).Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 		} else {
 			return jen.Id(name).Op(":=").Id("inplace"+typeName).Call(jen.Id(argName(name)));
 		}
@@ -419,6 +426,15 @@ func isBasicGoType(goType string) bool {
 	} else {
 		return false
 	}
+}
+
+func isSkyArrayType(typeName string) bool {
+	for _, t := range arrayTypes {
+		if t == typeName {
+			return true
+		}
+	}
+	return false
 }
 
 /* Process a type expression. Returns the code in C for the type and ok if successfull */
