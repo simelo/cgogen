@@ -402,10 +402,12 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
 		typeName := identExpr.Name
 		if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
-		} else {
+		} else if isSkyArrayType(typeName) {
 			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]"),
 				jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
 				jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
+		} else {
+			return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual("cipher",typeName)).Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 		}
 	}
 	return nil
