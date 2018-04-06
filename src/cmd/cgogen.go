@@ -66,6 +66,7 @@ var inplaceConvertTypes = []string{
 }
 	
 var return_var_name = "____return_var"
+var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
 
 func main() {
@@ -351,7 +352,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		}		
 	}
 	if retField != nil {
-		retvars = append(retvars, jen.Id(resultName(return_var_name)))
+		retvars = append(retvars, jen.Id(return_err_name))
 	}
 	var call_func_code jen.Code
 	if len(retvars) > 0 {
@@ -375,9 +376,13 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	
 	stmt = stmt.Parens(jen.Id(return_var_name).Id("uint32"))
 	if retField != nil {
-		blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Id("libErrorCode").Call(jen.Id(resultName(return_var_name))))
+		blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Id("libErrorCode").Call(jen.Id(return_err_name)))
+		convertOutputCode := jen.If(jen.Id(return_err_name).Op("==").Nil()).Block(output_vars_convert_code...)
+		blockParams = append(blockParams, convertOutputCode)
+	} else {
+		blockParams = append(blockParams, output_vars_convert_code...)
 	}
-	blockParams = append(blockParams, output_vars_convert_code...)
+	
 	blockParams = append(blockParams, jen.Return())
 	
 	stmt.Block(blockParams...)
