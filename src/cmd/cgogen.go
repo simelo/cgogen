@@ -59,6 +59,11 @@ var typesMap = map[string]string{
 var arrayTypes = []string{
 	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160", 
 }	
+
+/*These types will be converted using inplace functions*/
+var inplaceConvertTypes = []string{
+	"PubKey", "PubKeySlice", "Address",
+}
 	
 var return_var_name = "____return_var"
 var deal_out_string_as_gostring = true
@@ -401,7 +406,13 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 		typeName := identExpr.Name
 		if isBasicGoType(typeName) {
 			return jen.Id(name).Op(":=").Id(argName(name))
-		} else if isSkyArrayType(typeName) {
+		} else if isInplaceConvertType(typeName) {
+			if isPointer {
+				return jen.Id(name).Op(":=").Id("inplace"+typeName).Call(jen.Id(argName(name)));
+			} else {
+				return jen.Id(name).Op(":=").Op("*").Id("inplace"+typeName).Call(jen.Id(argName(name)));
+			}
+		} else {
 			if isPointer {
 				return jen.Id(name).Op(":=").Parens(jen.Op("*").
 					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
@@ -410,12 +421,6 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").
 					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-			}
-		} else {
-			if isPointer {
-				return jen.Id(name).Op(":=").Id("inplace"+typeName).Call(jen.Id(argName(name)));
-			} else {
-				return jen.Id(name).Op(":=").Op("*").Id("inplace"+typeName).Call(jen.Id(argName(name)));
 			}
 		}
 	}
@@ -436,17 +441,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 			return jen.Id("copyString").Call(jen.Id(argName(name)), jen.Id(name))
 		} else if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
-		} else if isSkyArrayType(typeName) {
-			if isPointer {
-				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")),
-							jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),			
-							jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
-			} else {
-				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]")),
-						jen.Qual("unsafe", "Pointer").Call(jen.Id(name)), 
-						jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
-			}
-		} else {
+		} else if isInplaceConvertType(typeName) {
 			if isPointer {
 				return jen.Id(name).Op("=").Op("*").Parens(jen.Op("*").
 					Qual("C",typeName)).
@@ -455,6 +450,16 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 				return jen.Id(name).Op("=").Parens(jen.Op("*").
 					Qual("C",typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
+			}
+		} else {
+			if isPointer {
+				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")),
+							jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),			
+							jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
+			} else {
+				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]")),
+						jen.Qual("unsafe", "Pointer").Call(jen.Id(name)), 
+						jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
 			}
 		}
 	}
@@ -486,6 +491,16 @@ func isSkyArrayType(typeName string) bool {
 	}
 	return false
 }
+
+func isInplaceConvertType(typeName string) bool {
+	for _, t := range inplaceConvertTypes {
+		if t == typeName {
+			return true
+		}
+	}
+	return false
+}
+
 
 /* Process a type expression. Returns the code in C for the type and ok if successfull */
 func processTypeExpression(fast *ast.File, type_expr ast.Expr, 
