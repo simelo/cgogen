@@ -422,23 +422,22 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
 		} else if isSkyArrayType(typeName) {
 			if isPointer {
-				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(
-					jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]"),
-					jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
-					jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
+				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")),
+							jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),			
+							jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
 			} else {
-				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]"),
-					jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
-					jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
+				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]")),
+						jen.Qual("unsafe", "Pointer").Call(jen.Id(name)), 
+						jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
 			}
 		} else {
 			if isPointer {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").
-					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+				return jen.Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C",typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			} else {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").
-					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+				return jen.Id(name).Op("=").Parens(jen.Op("*").
+					Qual("C",typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
 			}
 		}
