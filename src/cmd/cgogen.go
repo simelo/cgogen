@@ -317,8 +317,12 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 				if nameIdx != lastNameIdx {
 					params = append(params, jen.Id(argName(ident.Name)))
 				} else {
+					typeName := typeSpecStr(&field.Type)
+					if rune(typeName[0]) == '[' {
+						typeName = "*C.GoSlice_"
+					}
 					params = append(params, jen.Id(
-						argName(ident.Name)).Id(typeSpecStr(&field.Type)))
+						argName(ident.Name)).Id(typeName))
 				}
 				convertCode := getCodeToConvertInParameter(&field.Type, ident.Name, false)
 				if convertCode != nil {
@@ -376,8 +380,20 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 
 /*Returns jen code to convert an input parameter from wrapper to original function*/
 func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer bool) jen.Code{
-	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
-		return jen.Id(name).Op(":=").Id(argName(name))
+	if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
+		typeExpr := arrayExpr.Elt
+		if identExpr, isIdent := (typeExpr).(*ast.Ident); isIdent {
+			typeName := identExpr.Name
+			if isBasicGoType(typeName) {
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").
+					Id(identExpr.Name)).
+						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
+			} else {
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").
+					Qual("github.com/skycoin/skycoin/src/cipher", identExpr.Name)).
+						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
+			}
+		}
 	} else if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
 		_type := &starExpr.X
 		return getCodeToConvertInParameter(_type, name, true)
