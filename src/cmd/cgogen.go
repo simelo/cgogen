@@ -57,7 +57,7 @@ var typesMap = map[string]string{
 	}
 
 var arrayTypes = []string{
-	"PubKey", "SHA256", "Sig", "SecKey",
+	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160", 
 }	
 	
 var return_var_name = "____return_var"
