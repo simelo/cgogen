@@ -62,7 +62,7 @@ var arrayTypes = []string{
 
 /*These types will be converted using inplace functions*/
 var inplaceConvertTypes = []string{
-	"PubKey", "PubKeySlice", "Address",
+	"PubKeySlice", "Address",
 }
 	
 var return_var_name = "____return_var"
