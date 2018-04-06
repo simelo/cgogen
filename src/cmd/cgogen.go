@@ -240,12 +240,14 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
 	
 	var params jen.Statement
+	var isPointerRecv bool
 	if receiver := fdecl.Recv; receiver != nil {
 		// Method
 		_type := &receiver.List[0].Type
 		typeName := ""
-		if starExpr, isPointerRecv := (*_type).(*ast.StarExpr); isPointerRecv {
+		if starExpr, _isPointerRecv := (*_type).(*ast.StarExpr); _isPointerRecv {
 			_type = &starExpr.X
+			isPointerRecv = _isPointerRecv
 		}
 		if identExpr, isIdent := (*_type).(*ast.Ident); isIdent {
 			typeName = identExpr.Name
@@ -255,7 +257,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 		recvParam = recvParam.Id(typeSpecStr(_type))
 		params = append(params, recvParam)
 		funcName = typeName + "_" + funcName
-		convertCode := getCodeToConvertInParameter(_type, recvParamName)
+		convertCode := getCodeToConvertInParameter(_type, recvParamName, isPointerRecv)
 		if convertCode != nil {
 			blockParams = append( blockParams, convertCode )
 		}
@@ -304,7 +306,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 			}
 			paramName := argName("arg"+fmt.Sprintf("%d", fieldIdx))
 			params = append(params, jen.Id(paramName).Id(typeName))
-			convertCode := getCodeToConvertOutParameter(&field.Type, paramName)
+			convertCode := getCodeToConvertOutParameter(&field.Type, paramName, false)
 			if convertCode != nil {
 				output_vars_convert_code = append( output_vars_convert_code, convertCode )
 			}
@@ -318,7 +320,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 					params = append(params, jen.Id(
 						argName(ident.Name)).Id(typeSpecStr(&field.Type)))
 				}
-				convertCode := getCodeToConvertInParameter(&field.Type, ident.Name)
+				convertCode := getCodeToConvertInParameter(&field.Type, ident.Name, false)
 				if convertCode != nil {
 					blockParams = append( blockParams, convertCode )
 				}
@@ -373,33 +375,45 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 }
 
 /*Returns jen code to convert an input parameter from wrapper to original function*/
-func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string) jen.Code{
+func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer bool) jen.Code{
 	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		return jen.Id(name).Op(":=").Id(argName(name))
 	} else if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
 		_type := &starExpr.X
-		return getCodeToConvertInParameter(_type, name)
+		return getCodeToConvertInParameter(_type, name, true)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
 		if isBasicGoType(typeName) {
 			return jen.Id(name).Op(":=").Id(argName(name))
 		} else if isSkyArrayType(typeName) {
-			return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual("cipher",typeName)).Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+			if isPointer {
+				return jen.Id(name).Op(":=").Parens(jen.Op("*").
+					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+			} else {
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").
+					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+			}
 		} else {
-			return jen.Id(name).Op(":=").Id("inplace"+typeName).Call(jen.Id(argName(name)));
+			if isPointer {
+				return jen.Id(name).Op(":=").Id("inplace"+typeName).Call(jen.Id(argName(name)));
+			} else {
+				return jen.Id(name).Op(":=").Op("*").Id("inplace"+typeName).Call(jen.Id(argName(name)));
+			}
 		}
 	}
 	return nil
 }
 
 /*Returns jen Code to convert an output parameter from original to wrapper function*/
-func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
+func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bool) jen.Code{
 	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		return jen.Id("copyToGoSlice").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name))),
 			jen.Id(name))
 	} else if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
 		_type := &starExpr.X
-		return getCodeToConvertOutParameter(_type, name)
+		return getCodeToConvertOutParameter(_type, name, true)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
 		if deal_out_string_as_gostring && typeName == "string" {
@@ -407,11 +421,26 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string) jen.Code{
 		} else if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
 		} else if isSkyArrayType(typeName) {
-			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]"),
-				jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
-				jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
+			if isPointer {
+				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(
+					jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]"),
+					jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
+					jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
+			} else {
+				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]"),
+					jen.Qual("unsafe", "Pointer").Call(jen.Id(name))), 
+					jen.Id("uint").Parens(jen.Id("SizeOf" + typeName)))
+			}
 		} else {
-			return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual("cipher",typeName)).Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+			if isPointer {
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").
+					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+			} else {
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").
+					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
+			}
 		}
 	}
 	return nil
