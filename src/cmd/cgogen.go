@@ -64,8 +64,19 @@ var arrayTypes = []string{
 var inplaceConvertTypes = []string{
 	"PubKeySlice", "Address",
 }
+
+/*func dumpVar(decl ast.Expr){
+	s := reflect.ValueOf(decl).Elem()
+	typeOfT := s.Type()
+	fmt.Println(typeOfT)
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		fmt.Printf("Field %d: %s %s = %v\n", i,
+			typeOfT.Field(i).Name, f.Type(), f.Interface())
+	}
+}*/
 	
-var return_var_name = "____return_var"
+var return_var_name = "____error_code"
 var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
 
@@ -131,7 +142,7 @@ func main() {
 			fmt.Printf("%#v", outFile)
 		}
 	}
-	applog("Finished %v", cfg.Path)
+	applog("Finished %v", cfg.Path) 
 }
 
 func check(err error) {
@@ -159,8 +170,8 @@ func typeSpecStr(_typeExpr *ast.Expr) string {
 			_typeExpr = &starExpr.X
 			continue
 		}
-		if _, isEllipse := (*_typeExpr).(*ast.Ellipsis); isEllipse {
-			spec += "..."
+		if ellipsisExpr, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
+			spec += "..." + typeSpecStr(&ellipsisExpr.Elt)
 			_typeExpr = nil
 			continue
 		}
@@ -242,7 +253,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	var blockParams []jen.Code
 	
 	blockParams = append( blockParams, jen.Id(return_var_name).Op("=").Lit(0) )
-	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id("recover").Call())
+	//call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id("recover").Call())
+	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id(return_var_name), jen.Id("recover").Call())
 	blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
 	
 	var params jen.Statement
@@ -404,7 +416,7 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
 			}
 		}
-	} else if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
+	} else if starExpr, isPointerParam := (*_typeExpr).(*ast.StarExpr); isPointerParam {
 		_type := &starExpr.X
 		return getCodeToConvertInParameter(_type, name, true)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
@@ -428,6 +440,17 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			}
 		}
+	
+	} else if _, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
+		return jen.Id(name).Op(":=").Id(argName(name))
+		/*typeExpr := ellipsisExpr.Elt
+		if identExpr, isIdent := (typeExpr).(*ast.Ident); isIdent {
+			typeName := identExpr.Name
+			if isBasicGoType(typeName) {
+				return jen.Id(name).Op(":=").Id(argName(name))
+			} else {
+			}
+		} */
 	}
 	return nil
 }
