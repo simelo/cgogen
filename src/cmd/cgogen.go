@@ -274,9 +274,17 @@ func getPackagePath(filePath string) string {
 	if len(folders) > 0 {
 		fileName := folders[len(folders) - 1]
 		packageFolders := strings.Split(fileName, ".")
-		if len(packageFolders) > 3 {
-			packageFolders = packageFolders[:len(packageFolders)-3]
-			packagePath = strings.Join(packageFolders, "/")	+ "/"
+		if len(packageFolders) > 2 {
+			packageFolders = packageFolders[:len(packageFolders)-2]
+			var result []string
+			for _, s := range packageFolders {
+				if s == "internal" || s == "example" {
+					break
+				} else {
+					result = append( result, s)
+				}
+			}
+			packagePath = strings.Join(result, "/")
 		}
 	}
 	return packagePath
@@ -286,6 +294,9 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 	packagePath := ""
 	if get_package_path_from_file_name {
 		packagePath = getPackagePath(cfg.Path)
+	}
+	if packagePath == "" {
+		packagePath = fast.Name.Name
 	}
 
 	funcName := fdecl.Name.Name
@@ -419,14 +430,14 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 				jen.List(retvars...).Op(":=").Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
 		} else {
 			call_func_code = 
-				jen.List(retvars...).Op(":=").Qual("github.com/skycoin/skycoin/src/" + packagePath + fast.Name.Name,
+				jen.List(retvars...).Op(":=").Qual("github.com/skycoin/skycoin/src/" + packagePath,
 					fdecl.Name.Name).Call(callparams...)
 		}
 	} else {
 		if fdecl.Recv != nil {
 			call_func_code = jen.Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
 		} else {
-			call_func_code = jen.Qual("github.com/skycoin/skycoin/src/" + packagePath + fast.Name.Name,
+			call_func_code = jen.Qual("github.com/skycoin/skycoin/src/" + packagePath,
 					fdecl.Name.Name).Call(callparams...)
 		}
 	}
