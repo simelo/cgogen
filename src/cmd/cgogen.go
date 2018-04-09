@@ -9,6 +9,8 @@ import (
 	"log"
 	"os"
 	"github.com/dave/jennifer/jen"
+	"strings"
+	"reflect"
 )
 
 type Config struct {
@@ -55,6 +57,45 @@ var typesMap = map[string]string{
 	  "string" : "GoString_",
 	  "bool" : "bool",
 	}
+	
+func dumpObjectScope(pkg ast.Scope){
+	s := reflect.ValueOf(pkg).Elem()
+	typeOfT := s.Type()
+	fmt.Println(typeOfT)
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		fmt.Printf("Field %d: %s %s = %v\n", i,
+			typeOfT.Field(i).Name, f.Type(), f.Interface())
+	}
+}
+
+func dumpObject(pkg ast.Object){
+	s := reflect.ValueOf(pkg).Elem()
+	typeOfT := s.Type()
+	fmt.Println(typeOfT)
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		fmt.Printf("Field %d: %s %s = %v\n", i,
+			typeOfT.Field(i).Name, f.Type(), f.Interface())
+	}
+}
+	
+func dumpVar(decl ast.Expr){
+	s := reflect.ValueOf(decl).Elem()
+	typeOfT := s.Type()
+	fmt.Println(typeOfT)
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		fmt.Printf("Field %d: %s %s = %v\n", i,
+			typeOfT.Field(i).Name, f.Type(), f.Interface())
+	}
+	if identExpr, isIdent := (decl).(*ast.Ident); isIdent {
+		if identExpr.Obj != nil {
+			fmt.Println("ObjName: ", identExpr.Obj.Name)
+			fmt.Println("Type: ", identExpr.Obj.Type)
+		}
+	}
+}
 
 var arrayTypes = []string{
 	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160", 
@@ -64,21 +105,11 @@ var arrayTypes = []string{
 var inplaceConvertTypes = []string{
 	"PubKeySlice", "Address",
 }
-
-/*func dumpVar(decl ast.Expr){
-	s := reflect.ValueOf(decl).Elem()
-	typeOfT := s.Type()
-	fmt.Println(typeOfT)
-	for i := 0; i < s.NumField(); i++ {
-		f := s.Field(i)
-		fmt.Printf("Field %d: %s %s = %v\n", i,
-			typeOfT.Field(i).Name, f.Type(), f.Interface())
-	}
-}*/
 	
 var return_var_name = "____error_code"
 var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
+var get_package_path_from_file_name = true
 
 func main() {
 	cfg.register()
@@ -146,7 +177,7 @@ func main() {
 }
 
 func check(err error) {
-    if err != nil {
+	if err != nil {
 		fmt.Println(err)
 		os.Exit(0)
 	}
@@ -237,10 +268,24 @@ func resultName(name string) string {
 	return "__" + name
 }
 
-func convertCVarToGoVar(){
+func getPackagePath(filePath string) string {
+	packagePath := ""
+	folders := strings.Split(filePath, "/")
+	if len(folders) > 0 {
+		fileName := folders[len(folders) - 1]
+		packageFolders := strings.Split(fileName, ".")
+		if len(packageFolders) > 3 {
+			packagePath = strings.Join(packageFolders[:len(packageFolders)-3], ".")	
+		}
+	}
+	return packagePath
 }
 
 func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
+	packagePath := ""
+	if get_package_path_from_file_name {
+		packagePath = getPackagePath(cfg.Path)
+	}
 
 	funcName := fdecl.Name.Name
 
@@ -373,14 +418,14 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File) {
 				jen.List(retvars...).Op(":=").Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
 		} else {
 			call_func_code = 
-				jen.List(retvars...).Op(":=").Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
+				jen.List(retvars...).Op(":=").Qual("github.com/skycoin/skycoin/src/" + packagePath + fast.Name.Name,
 					fdecl.Name.Name).Call(callparams...)
 		}
 	} else {
 		if fdecl.Recv != nil {
 			call_func_code = jen.Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
 		} else {
-			call_func_code = jen.Qual("github.com/skycoin/skycoin/src/"+fast.Name.Name,
+			call_func_code = jen.Qual("github.com/skycoin/skycoin/src/" + packagePath + fast.Name.Name,
 					fdecl.Name.Name).Call(callparams...)
 		}
 	}
