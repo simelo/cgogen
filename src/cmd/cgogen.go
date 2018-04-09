@@ -594,11 +594,18 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr, name string,
 		c_code += "struct{\n"
 		error := false
 		for _, field := range typeStruct.Fields.List{
+			var names []string
 			for _, fieldName := range field.Names{
+				names = append( names, fieldName.Name )
+			}
+			if len(names) == 0 {
+				names = append( names, "_unnamed")
+			}
+			for _, name := range names{
 				for i := 0; i < depth * 4; i++{
 					c_code += " "
 				}
-				type_code, result := processTypeExpression(fast, field.Type, fieldName.Name, defined_types, forwards_declarations, depth + 1)
+				type_code, result := processTypeExpression(fast, field.Type, name, defined_types, forwards_declarations, depth + 1)
 				if result {
 					c_code += type_code
 				} else {
