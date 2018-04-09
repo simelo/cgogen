@@ -464,12 +464,10 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 		if identExpr, isIdent := (typeExpr).(*ast.Ident); isIdent {
 			typeName := identExpr.Name
 			if isBasicGoType(typeName) {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").
-					Id(identExpr.Name)).
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name)).
 						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
 			} else {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").
-					Qual("github.com/skycoin/skycoin/src/cipher", identExpr.Name)).
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name)).
 						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
 			}
 		}
@@ -488,12 +486,10 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 			}
 		} else {
 			if isPointer {
-				return jen.Id(name).Op(":=").Parens(jen.Op("*").
-					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+				return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			} else {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").
-					Qual("github.com/skycoin/skycoin/src/cipher",typeName)).
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			}
 		}
