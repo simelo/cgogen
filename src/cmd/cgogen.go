@@ -616,8 +616,15 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += "}"
 		result = !error
-	}else if _, isArray := (type_expr).(*ast.ArrayType); isArray {
-		c_code += "GoSlice_ "
+	}else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray {
+		if arrayExpr.Len == nil {
+			c_code += "GoSlice_ "
+		} else if litExpr, isLit := (arrayExpr.Len).(*ast.BasicLit); isLit {
+			arrayElCode, result := processTypeExpression(fast, arrayExpr.Elt, defined_types, forwards_declarations, depth)
+			if result {
+				c_code += arrayElCode+"[" + litExpr.Value + "]" + " "
+			}
+		}
 		result = true
 	}else if _, isFunc := (type_expr).(*ast.FuncType); isFunc {
 		c_code += "Handle "
