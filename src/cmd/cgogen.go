@@ -275,7 +275,8 @@ func getPackagePath(filePath string) string {
 		fileName := folders[len(folders) - 1]
 		packageFolders := strings.Split(fileName, ".")
 		if len(packageFolders) > 3 {
-			packagePath = strings.Join(packageFolders[:len(packageFolders)-3], ".")	
+			packageFolders = packageFolders[:len(packageFolders)-3]
+			packagePath = strings.Join(packageFolders, "/")	+ "/"
 		}
 	}
 	return packagePath
