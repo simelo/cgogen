@@ -584,7 +584,7 @@ func isInplaceConvertType(typeName string) bool {
 
 
 /* Process a type expression. Returns the code in C for the type and ok if successfull */
-func processTypeExpression(fast *ast.File, type_expr ast.Expr, 
+func processTypeExpression(fast *ast.File, type_expr ast.Expr, name string, 
 							defined_types *[]string, 
 							forwards_declarations *[]string, depth int) (string, bool) {
 	c_code := ""
@@ -594,60 +594,57 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		c_code += "struct{\n"
 		error := false
 		for _, field := range typeStruct.Fields.List{
-			type_code, result := processTypeExpression(fast, field.Type, defined_types, forwards_declarations, depth + 1)
-			if result {
+			for _, fieldName := range field.Names{
 				for i := 0; i < depth * 4; i++{
 					c_code += " "
 				}
-				c_code += type_code
-				for i, fieldName := range field.Names{
-					if i > 0{
-						c_code += ", "
-					}
-					c_code += fieldName.Name
+				type_code, result := processTypeExpression(fast, field.Type, fieldName.Name, defined_types, forwards_declarations, depth + 1)
+				if result {
+					c_code += type_code
+				} else {
+					error = true
 				}
-				c_code += ";\n"
-			} else {
-				error = true
 			}
+			c_code += ";\n"
+			
 		}
 		for i := 0; i < (depth - 1) * 4; i++{
 			c_code += " "
 		}
-		c_code += "}"
+		c_code += "} " + name
 		result = !error
 	}else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray {
 		if arrayExpr.Len == nil {
-			c_code += "GoSlice_ "
+			c_code += "GoSlice_ " + name
 		} else if litExpr, isLit := (arrayExpr.Len).(*ast.BasicLit); isLit {
-			arrayElCode, result := processTypeExpression(fast, arrayExpr.Elt, defined_types, forwards_declarations, depth)
+			arrayElCode, result := processTypeExpression(fast, arrayExpr.Elt, "", defined_types, forwards_declarations, depth)
 			if result {
-				c_code += arrayElCode+"[" + litExpr.Value + "]" + " "
+				c_code += arrayElCode + " " + name+"[" + litExpr.Value + "]"
 			}
 		}
 		result = true
 	}else if _, isFunc := (type_expr).(*ast.FuncType); isFunc {
-		c_code += "Handle "
+		c_code += "Handle " + name
 		result = true
 	}else if _, isIntf := (type_expr).(*ast.InterfaceType); isIntf {
-		c_code += "GoInterface_ "
+		c_code += "GoInterface_ " + name
 		result = true
 	}else if _, isChan := (type_expr).(*ast.ChanType); isChan {
-		c_code += "GoChan_ "
+		c_code += "GoChan_ " + name
 		result = true
 	}else if _, isMap := (type_expr).(*ast.MapType); isMap {
-		c_code += "GoMap_ "
+		c_code += "GoMap_ " + name
 		result = true
 	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
 		targetTypeExpr := starExpr.X
-		type_code, ok := processTypeExpression(fast, targetTypeExpr, defined_types, forwards_declarations, depth + 1)
+		type_code, ok := processTypeExpression(fast, targetTypeExpr, "", defined_types, forwards_declarations, depth + 1)
 		if ok {
 			c_code += type_code
-			c_code += "* "
+			c_code += "* "  + name
 			result = true
 		}
 	}else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
-		c_code = goTypeToCType(identExpr.Name) + " "
+		c_code = goTypeToCType(identExpr.Name) + " " + name
 		type_found := false
 		for _, defined_type := range *defined_types{
 			if defined_type == identExpr.Name{
@@ -675,11 +672,10 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 	result := true
 	for _, s := range tdecl.Specs{
 		if typeSpec, isTypeSpec := (s).(*ast.TypeSpec); isTypeSpec {
-			type_c_code, ok := processTypeExpression(fast, typeSpec.Type, defined_types, forwards_declarations, 1)
+			type_c_code, ok := processTypeExpression(fast, typeSpec.Type, typeSpec.Name.Name, defined_types, forwards_declarations, 1)
 			if ok {
 				result_code += "typedef "
 				result_code += type_c_code
-				result_code += typeSpec.Name.Name
 				result_code += ";\n"
 				*defined_types = append( *defined_types, typeSpec.Name.Name )
 			} else {
