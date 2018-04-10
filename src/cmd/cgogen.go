@@ -197,17 +197,24 @@ func findImportPath(importName string) (string, bool) {
 	for _, importDef := range importDefs {
 		for _, s := range importDef.Specs{
 			if importSpec, isImportSpec := (s).(*ast.ImportSpec); isImportSpec {
+				name := ""
+				path := importSpec.Path.Value
+				if strings.HasPrefix( path, "\"") {
+					path = path[1:]
+				}
+				if strings.HasSuffix( path, "\"") {
+					path = path[:len(path)-1]
+				}
 				if importSpec.Name != nil {
-					if importSpec.Name.Name == importName {
-						path := importSpec.Path.Value
-						if strings.HasPrefix( path, "\"") {
-							path = path[1:]
-						}
-						if strings.HasSuffix( path, "\"") {
-							path = path[:len(path)-1]
-						}
-						return path, true
+					name = importSpec.Name.Name
+				} else {
+					path_parts := strings.split(path, "/")
+					if len(path_parts) > 0 {
+						name = path_parts[ len(path_parts) -1 ]
 					}
+				}
+				if name == importName {
+					return path, true
 				}
 			}
 		}
@@ -685,16 +692,26 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		c_code += name
 		result = !error
 	}else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray {
+		var arrayCode string
+		var arrayElCode string
+		result = false
 		if arrayExpr.Len == nil {
-			c_code += "GoSlice_ " + name
+			arrayCode = name
+			arrayElCode = "GoSlice_ "
+			result = true
 		} else if litExpr, isLit := (arrayExpr.Len).(*ast.BasicLit); isLit {
-			arrayElCode, result := processTypeExpression(fast, arrayExpr.Elt, package_name, "", 
-					defined_types, forwards_declarations, depth)
+			arrayElCode, result = processTypeExpression(fast, arrayExpr.Elt, package_name, "", 
+					defined_types, forwards_declarations, depth + 1)
 			if result {
-				c_code += arrayElCode + " " + name+"[" + litExpr.Value + "]"
+				arrayCode = name+"[" + litExpr.Value + "]"
 			}
 		}
-		result = true
+		if result {
+			if depth == 1 {
+				arrayCode = package_name + "__" + arrayCode
+			}
+			c_code += arrayElCode + " " + arrayCode
+		}
 	}else if _, isFunc := (type_expr).(*ast.FuncType); isFunc {
 		c_code += "Handle " + name
 		result = true
@@ -717,9 +734,9 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			result = true
 		}
 	}else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
-		var basic_type bool
-		c_code, basic_type = goTypeToCType(identExpr.Name)
-		if !basic_type {
+		var isBasic bool
+		c_code, isBasic = goTypeToCType(identExpr.Name)
+		if !isBasic {
 			c_code = package_name + "__" + c_code
 		}
 		c_code += " "
@@ -748,6 +765,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
 		if isIdent {
 			extern_package = identExpr.Name
+			fmt.Println("Extern Package " , extern_package)
 		}
 		type_code, ok := processTypeExpression(fast, selectorExpr.Sel, extern_package, name, 
 			defined_types, forwards_declarations, depth)
