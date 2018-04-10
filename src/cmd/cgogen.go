@@ -853,6 +853,9 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 				type_found = true
 			}
 		}
+		if dependant && depth == 1 {
+			addDependantType( dependant_types, new_name )
+		}
 		if !type_found{
 			if forwards_declarations != nil {
 				*forwards_declarations = append(*forwards_declarations, identExpr.Name)
