@@ -199,7 +199,14 @@ func findImportPath(importName string) (string, bool) {
 			if importSpec, isImportSpec := (s).(*ast.ImportSpec); isImportSpec {
 				if importSpec.Name != nil {
 					if importSpec.Name.Name == importName {
-						return importSpec.Path.Value, true
+						path := importSpec.Path.Value
+						if strings.HasPrefix( path, "\"") {
+							path = path[1:]
+						}
+						if strings.HasSuffix( path, "\"") {
+							path = path[:len(path)-1]
+						}
+						return path, true
 					}
 				}
 			}
@@ -519,7 +526,30 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			}
 		}
-	
+	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
+		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
+		if isIdent {
+			extern_package, found := findImportPath(identExpr.Name)
+			typeName := selectorExpr.Sel.Name
+			if found {
+				if isPointer {
+					return jen.Id(name).Op(":=").Parens(jen.Op("*").Qual(extern_package, typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+				} else {
+					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual(extern_package, typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+				}
+			} else {
+				extern_package = identExpr.Name
+				if isPointer {
+					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+				} else {
+					return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+				}
+			}
+		}
 	} else if _, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
 		return jen.Id(name).Op(":=").Id(argName(name))
 		/*typeExpr := ellipsisExpr.Elt
@@ -713,7 +743,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		} else {
 			result = true
 		}
-	}else if selectorExpr, isSelector := (type_expr).(*ast.SelectorExpr); isSelector {
+	} else if selectorExpr, isSelector := (type_expr).(*ast.SelectorExpr); isSelector {
 		extern_package := package_name
 		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
 		if isIdent {
