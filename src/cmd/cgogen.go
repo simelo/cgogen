@@ -223,7 +223,7 @@ func findImportPath(importName string) (string, bool) {
 }
 
 func isSkycoinName(importName string) bool {
-	path, result := findImportPath(string)
+	path, result := findImportPath(importName)
 	if result {
 		return strings.HasPrefix(path, "github.com/skycoin/")
 	} else {
@@ -663,7 +663,6 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 							forwards_declarations *[]string, depth int) (string, bool) {
 	c_code := ""
 	result := false
-	
 	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
 		c_code += "struct{\n"
 		error := false
@@ -746,7 +745,11 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		var isBasic bool
 		c_code, isBasic = goTypeToCType(identExpr.Name)
 		if !isBasic {
-			c_code = package_name + "__" + c_code
+			pack_prefix := ""
+			if !isSkycoinName(package_name) {
+				pack_prefix = "_"
+			}
+			c_code = pack_prefix + package_name + "__" + c_code
 		}
 		c_code += " "
 		if depth == 1 {
@@ -774,10 +777,13 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
 		if isIdent {
 			extern_package = identExpr.Name
-			fmt.Println("Extern Package " , extern_package)
 		}
-		type_code, ok := processTypeExpression(fast, selectorExpr.Sel, extern_package, name, 
-			defined_types, forwards_declarations, depth)
+		new_name := name
+		if depth == 1 {
+			new_name = package_name + "__" + name
+		}
+		type_code, ok := processTypeExpression(fast, selectorExpr.Sel, extern_package, new_name, 
+			defined_types, forwards_declarations, depth + 1)
 		if ok {
 			c_code = type_code
 			result = true
