@@ -757,7 +757,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			typeName = package_name + "__" + typeName
 		}
 		c_code += typeName
-		if dependant {
+		if dependant && depth == 1 {
 			addDependantType( dependant_types, typeName )
 		}
 		result = !error
@@ -781,7 +781,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			}
 		}
 		if result {
-			if dependant {
+			if dependant && depth == 1 {
 				addDependantType( dependant_types, new_name )
 			}
 			c_code += arrayElCode + " " + arrayCode
@@ -816,7 +816,6 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 	}else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
 		type_code, isBasic := goTypeToCType(identExpr.Name)
-		c_code = type_code
 		if !isBasic {
 			pack_prefix := ""
 			addDependency := false
@@ -830,21 +829,27 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 					addDependency = true
 				}
 			}
-			c_code = pack_prefix + package_name + "__" + c_code
+			type_code = pack_prefix + package_name + "__" + type_code
 			if addDependency {
-				addDependantType(dependant_types, c_code)
+				addDependantType(dependant_types, type_code)
 				dependant = true
 			}
 		}
+		c_code = type_code
 		c_code += " "
 		new_name := name
 		if depth == 1 {
 			new_name = package_name + "__" + name
 		}
 		c_code += new_name
+		if !dependant {
+			if isDependantType(dependant_types, type_code) {
+				dependant = true
+			}
+		}
 		type_found := false
 		for _, defined_type := range *defined_types{
-			if defined_type == identExpr.Name{
+			if defined_type == type_code{
 				type_found = true
 			}
 		}
@@ -872,7 +877,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		type_code, ok, isFieldDependant := processTypeExpression(fast, selectorExpr.Sel, extern_package, new_name, 
 			defined_types, forwards_declarations, depth + 1, dependant_types)
 		dependant = isFieldDependant
-		if dependant {
+		if dependant && depth == 1 {
 			addDependantType( dependant_types, new_name )
 		}
 		if ok {
@@ -881,6 +886,15 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 	}
 	return c_code, result, dependant
+}
+
+func isDependantType(dependant_types *[]string, typeName string) bool {
+	for _, t := range *dependant_types {
+		if t == typeName {
+			return true
+		}
+	}
+	return false
 }
 
 func addDependantType(dependant_types *[]string, typeName string){
@@ -922,7 +936,10 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 	result_code := ""
 	var defined_types []string
 	for key, _ := range typesMap {
-		defined_types = append( defined_types, key )
+		ctype, ok := goTypeToCType(key)
+		if ok {
+			defined_types = append( defined_types, ctype )
+		}
 	}
 	
 	unprocessed := len( typeDecls )
