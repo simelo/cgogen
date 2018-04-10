@@ -843,13 +843,11 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += new_name
 		type_found := false
-		fmt.Println("Searching ", identExpr.Name)
 		for _, defined_type := range *defined_types{
 			if defined_type == identExpr.Name{
 				type_found = true
 			}
 		}
-		fmt.Println("Searched ", identExpr.Name, " ", type_found)
 		if !type_found{
 			if forwards_declarations != nil {
 				*forwards_declarations = append(*forwards_declarations, identExpr.Name)
@@ -911,9 +909,7 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 				result_code += type_c_code
 				result_code += ";\n"
 				*defined_types = append( *defined_types, fast.Name.Name + "__" + typeSpec.Name.Name )
-				fmt.Println("Define Types: ", defined_types)
 			} else {
-				fmt.Println("Not defined")
 				result = false
 			}
 		}
@@ -958,7 +954,6 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 			}
 		}
 	}
-	fmt.Println("Define Types: ", defined_types)
 	return result_code
 }
 
