@@ -208,7 +208,7 @@ func findImportPath(importName string) (string, bool) {
 				if importSpec.Name != nil {
 					name = importSpec.Name.Name
 				} else {
-					path_parts := strings.split(path, "/")
+					path_parts := strings.Split(path, "/")
 					if len(path_parts) > 0 {
 						name = path_parts[ len(path_parts) -1 ]
 					}
@@ -220,6 +220,15 @@ func findImportPath(importName string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func isSkycoinName(importName string) bool {
+	path, result := findImportPath(string)
+	if result {
+		return strings.HasPrefix(path, "github.com/skycoin/")
+	} else {
+		return false
+	}
 }
 
 func typeSpecStr(_typeExpr *ast.Expr, package_name string) string {
