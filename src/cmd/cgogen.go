@@ -960,16 +960,20 @@ func addDependantType(dependant_types *[]string, typeName string){
 /* Process a type definition in GO and returns the c code for the definition */
 func processTypeDef(fast *ast.File, tdecl *ast.GenDecl, 
 					defined_types *[]string, forwards_declarations *[]string,
-					dependant_types *[]string) (string, bool) {
+					dependant_types *[]string) (string, bool, bool) {
 	result_code := ""
 	result := true
+	isDependant := false
 	for _, s := range tdecl.Specs{
 		if typeSpec, isTypeSpec := (s).(*ast.TypeSpec); isTypeSpec {
 			applog("Processing %v \n", typeSpec.Name.Name)
-			type_c_code, ok, _ := processTypeExpression(fast, typeSpec.Type, 
+			type_c_code, ok, isDependantExpr := processTypeExpression(fast, typeSpec.Type, 
 				fast.Name.Name, typeSpec.Name.Name, defined_types, forwards_declarations, 1,
 				dependant_types)
 			if ok {
+				if isDependantExpr {
+					isDependant = true
+				}
 				result_code += "typedef "
 				result_code += type_c_code
 				result_code += ";\n"
@@ -979,7 +983,7 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 			}
 		}
 	}
-	return result_code, result
+	return result_code, result, isDependant
 }
 
 /* Process all type definitions. Returns c code for all the defintions */
@@ -999,11 +1003,13 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 		went_blank = true
 		for index, typeDecl := range typeDecls{
 			if typeDecl != nil {
-				typeCode, ok := processTypeDef(fast, typeDecl, &defined_types, nil, dependant_types)
+				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &defined_types, nil, dependant_types)
 				if ok {
 					went_blank = false
 					typeDecls[index] = nil
-					result_code += typeCode
+					if !(cfg.IgnoreDependants && isDependant) {
+						result_code += typeCode
+					}
 					unprocessed -= 1
 				}
 			}
@@ -1015,9 +1021,11 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 	if unprocessed > 0 {
 		for _, typeDecl := range typeDecls{
 			if typeDecl != nil {
-				typeCode, ok := processTypeDef(fast, typeDecl, &defined_types, &forwards_declarations, dependant_types)
+				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &defined_types, &forwards_declarations, dependant_types)
 				if ok {
-					result_code += typeCode
+					if !(cfg.IgnoreDependants && isDependant) {
+						result_code += typeCode
+					}
 				}
 			}
 		}
