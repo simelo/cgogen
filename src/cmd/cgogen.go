@@ -137,10 +137,14 @@ func main() {
 	
 	var dependant_functions []string
 	var dependant_types []string
-	if cfg.ProcessDependencies && cfg.TypeDependencyFile != "" {
-		dependant_types = loadDependencyFile(cfg.TypeDependencyFile)
+	if cfg.ProcessDependencies {
+		if cfg.TypeDependencyFile != "" {
+			dependant_types = loadDependencyFile(cfg.TypeDependencyFile, "|")
+		}
+		if cfg.FuncDependencyFile != "" {
+			dependant_functions = loadDependencyFile(cfg.FuncDependencyFile, "\r\n")
+		}
 	}
-
 	applog("Opening %v \n", cfg.Path)
 	fo, err := os.Open(cfg.Path)
 	check(err)
@@ -150,6 +154,14 @@ func main() {
 	fset := token.NewFileSet()
 	fast, err := parser.ParseFile(fset, "", fo, parser.AllErrors)
 	check(err)
+	
+	packagePath := ""
+	if get_package_path_from_file_name {
+		packagePath = getPackagePath(cfg.Path)
+	}
+	if packagePath == "" {
+		packagePath = fast.Name.Name
+	}
 
 	outFile := jen.NewFile("main")
 	
@@ -171,7 +183,7 @@ func main() {
 					plist = &dependant_types
 				}
 				if isDependant := processFunc(fast, decl, outFile, plist); isDependant {
-					dependant_functions = append(dependant_functions, fast.Name.Name + " " + decl.Name.Name)
+					addDependant(&dependant_functions, packagePath + " " + decl.Name.Name)
 				}
 			} 
 		}
@@ -212,7 +224,7 @@ func main() {
 			fmt.Println(dependant_types)
 		}
 		if cfg.FuncDependencyFile != "" {
-			saveDependencyFile(cfg.FuncDependencyFile, dependant_functions, "\n")
+			saveDependencyFile(cfg.FuncDependencyFile, dependant_functions, "\r\n")
 		} else {
 			fmt.Println(dependant_functions)
 		}
@@ -228,14 +240,14 @@ func saveDependencyFile(path string, list []string, separator string){
 	f.Sync()
 }
 
-func loadDependencyFile(path string) (list []string) {
+func loadDependencyFile(path string, separator string) (list []string) {
 	f, err := os.Open(path)
 	if err == nil {
 		defer f.Close()
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(f)
 		contents := buf.String()
-		list = strings.Split(contents, "|")
+		list = strings.Split(contents, separator)
 	}
 	return 
 }
@@ -806,7 +818,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += typeName
 		if dependant && depth == 1 {
-			addDependantType( dependant_types, typeName )
+			addDependant( dependant_types, typeName )
 		}
 		result = !error
 	}else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray {
@@ -830,7 +842,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		if result {
 			if dependant && depth == 1 {
-				addDependantType( dependant_types, new_name )
+				addDependant( dependant_types, new_name )
 			}
 			c_code += arrayElCode + " " + arrayCode
 		}
@@ -858,7 +870,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			}
 			c_code += "* "  + new_name
 			if dependant {
-				addDependantType( dependant_types, new_name)
+				addDependant( dependant_types, new_name)
 			}
 			result = true
 		}
@@ -879,7 +891,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			}
 			type_code = pack_prefix + package_name + package_separator + type_code
 			if addDependency {
-				addDependantType(dependant_types, type_code)
+				addDependant(dependant_types, type_code)
 				dependant = true
 			}
 		}
@@ -902,7 +914,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			}
 		}
 		if dependant && depth == 1 {
-			addDependantType( dependant_types, new_name )
+			addDependant( dependant_types, new_name )
 		}
 		if !type_found{
 			if forwards_declarations != nil {
@@ -929,7 +941,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			defined_types, forwards_declarations, depth + 1, dependant_types)
 		dependant = isFieldDependant
 		if dependant && depth == 1 {
-			addDependantType( dependant_types, new_name )
+			addDependant( dependant_types, new_name )
 		}
 		if ok {
 			c_code = type_code
@@ -948,7 +960,7 @@ func isDependantType(dependant_types *[]string, typeName string) bool {
 	return false
 }
 
-func addDependantType(dependant_types *[]string, typeName string){
+func addDependant(dependant_types *[]string, typeName string){
 	for _, t := range *dependant_types {
 		if t == typeName {
 			return
