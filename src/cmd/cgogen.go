@@ -12,6 +12,7 @@ import (
 	"strings"
 	"reflect"
 	"bytes"
+	"sync"
 )
 
 type Config struct {
@@ -125,6 +126,7 @@ var return_var_name = "____error_code"
 var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
 var get_package_path_from_file_name = true
+var mutex sync.Mutex
 
 
 func main() {
@@ -140,6 +142,7 @@ func main() {
 	if cfg.ProcessDependencies {
 		if cfg.TypeDependencyFile != "" {
 			dependant_types = loadDependencyFile(cfg.TypeDependencyFile, "|")
+			fmt.Println("Loaded Dependant Types: ", dependant_types)
 		}
 		if cfg.FuncDependencyFile != "" {
 			dependant_functions = loadDependencyFile(cfg.FuncDependencyFile, "\r\n")
@@ -219,20 +222,24 @@ func main() {
 	}
 	if cfg.ProcessDependencies {
 		if cfg.TypeDependencyFile != "" {
+			fmt.Println("Saving Dependant Types: ", dependant_types)
 			saveDependencyFile(cfg.TypeDependencyFile, dependant_types, "|")
+			
 		} else {
-			fmt.Println(dependant_types)
+			fmt.Println("Dependant Types: ", dependant_types)
 		}
 		if cfg.FuncDependencyFile != "" {
 			saveDependencyFile(cfg.FuncDependencyFile, dependant_functions, "\r\n")
 		} else {
-			fmt.Println(dependant_functions)
+			fmt.Println("Dependant Functions: ", dependant_functions)
 		}
 	}
 	applog("Finished %v", cfg.Path) 
 }
 
 func saveDependencyFile(path string, list []string, separator string){
+	mutex.Lock()
+	defer mutex.Unlock()
 	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
@@ -241,6 +248,8 @@ func saveDependencyFile(path string, list []string, separator string){
 }
 
 func loadDependencyFile(path string, separator string) (list []string) {
+	mutex.Lock()
+	defer mutex.Unlock()
 	f, err := os.Open(path)
 	if err == nil {
 		defer f.Close()
@@ -860,16 +869,19 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		result = true
 	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
 		targetTypeExpr := starExpr.X
-		type_code, ok, dependant := processTypeExpression(fast, targetTypeExpr, package_name, "", 
+		type_code, ok, isFieldDependant := processTypeExpression(fast, targetTypeExpr, package_name, "", 
 			defined_types, forwards_declarations, depth + 1, dependant_types)
 		if ok {
+			if isFieldDependant {
+				dependant = true
+			}
 			c_code += type_code
 			new_name := name
 			if depth == 1 {
 				new_name = package_name + package_separator + name
 			}
 			c_code += "* "  + new_name
-			if dependant {
+			if dependant  && depth == 1{
 				addDependant( dependant_types, new_name)
 			}
 			result = true
@@ -936,10 +948,11 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		if depth == 1 {
 			new_name = package_name + package_separator + name
 		}
-		isFieldDependant := false
 		type_code, ok, isFieldDependant := processTypeExpression(fast, selectorExpr.Sel, extern_package, new_name, 
 			defined_types, forwards_declarations, depth + 1, dependant_types)
-		dependant = isFieldDependant
+		if isFieldDependant {
+			dependant = true
+		}
 		if dependant && depth == 1 {
 			addDependant( dependant_types, new_name )
 		}
