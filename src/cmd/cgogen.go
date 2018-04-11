@@ -126,7 +126,6 @@ var return_var_name = "____error_code"
 var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
 var get_package_path_from_file_name = true
-var mutex sync.Mutex
 
 
 func main() {
@@ -238,8 +237,6 @@ func main() {
 }
 
 func saveDependencyFile(path string, list []string, separator string){
-	mutex.Lock()
-	defer mutex.Unlock()
 	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
@@ -248,8 +245,6 @@ func saveDependencyFile(path string, list []string, separator string){
 }
 
 func loadDependencyFile(path string, separator string) (list []string) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	f, err := os.Open(path)
 	if err == nil {
 		defer f.Close()
