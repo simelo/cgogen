@@ -157,7 +157,7 @@ func main() {
 	
 	packagePath := ""
 	if get_package_path_from_file_name {
-		packagePath = getPackagePath(cfg.Path)
+		packagePath = getPackagePath(cfg.Path) + "/" + fast.Name.Name
 	}
 	if packagePath == "" {
 		packagePath = fast.Name.Name
