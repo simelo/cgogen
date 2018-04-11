@@ -141,7 +141,6 @@ func main() {
 	if cfg.ProcessDependencies {
 		if cfg.TypeDependencyFile != "" {
 			dependant_types = loadDependencyFile(cfg.TypeDependencyFile, "|")
-			fmt.Println("Loaded Dependant Types: ", dependant_types)
 		}
 		if cfg.FuncDependencyFile != "" {
 			dependant_functions = loadDependencyFile(cfg.FuncDependencyFile, "\r\n")
@@ -221,7 +220,6 @@ func main() {
 	}
 	if cfg.ProcessDependencies {
 		if cfg.TypeDependencyFile != "" {
-			fmt.Println("Saving Dependant Types: ", dependant_types)
 			saveDependencyFile(cfg.TypeDependencyFile, dependant_types, "|")
 			
 		} else {
