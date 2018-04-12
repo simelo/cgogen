@@ -12,7 +12,6 @@ import (
 	"strings"
 	"reflect"
 	"bytes"
-	"sync"
 )
 
 type Config struct {
@@ -71,6 +70,17 @@ var typesMap = map[string]string{
 	  "error" : "GoInt32_",
 	}
 	
+var inplaceConvertTypesPackages = map[string]string {
+	"PubKeySlice" : "cipher", 
+	"Address" : "cipher",
+	"BalanceResult" : "cli",
+}
+
+/*These types will be converted using inplace functions*/
+var inplaceConvertTypes = []string{
+	"PubKeySlice", "Address", "BalanceResult",
+}
+	
 func dumpObjectScope(pkg ast.Scope){
 	s := reflect.ValueOf(pkg).Elem()
 	typeOfT := s.Type()
@@ -114,10 +124,7 @@ var arrayTypes = []string{
 	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160", 
 }	
 
-/*These types will be converted using inplace functions*/
-var inplaceConvertTypes = []string{
-	"PubKeySlice", "Address",
-}
+
 
 var importDefs [](*ast.GenDecl)
 
@@ -355,7 +362,8 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string) string {
 			continue
 		}
 		if mapExpr, isMap := (*_typeExpr).(*ast.MapType); isMap {
-			return spec + "map[" + typeSpecStr(&mapExpr.Key, package_name) + "]" + typeSpecStr(&mapExpr.Value, package_name)
+			return spec + "map[" + typeSpecStr(&mapExpr.Key, package_name) + "]" + 
+				typeSpecStr(&mapExpr.Value, package_name)
 		}
 		identExpr, isIdent := (*_typeExpr).(*ast.Ident)
 		selExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr)
@@ -368,11 +376,14 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string) string {
 				identSelExpr, isSelIdent := (selExpr.X).(*ast.Ident)
 				if isSelIdent {
 					extern_package = identSelExpr.Name
+					if extern_package != package_name && !isSkycoinName(extern_package){
+						extern_package = "_" + extern_package
+					}
 				}
 				typeName = selExpr.Sel.Name
 			}
-			isExported := isAsciiUpper(rune(typeName[0]))
-			if spec == "" && !addPointer && (isExported) {
+			isExported := !isBasicGoType(typeName)//isAsciiUpper(rune(typeName[0]))
+			if spec == "" && !addPointer && isExported {
 				addPointer = true
 			}
 			if isExported {
@@ -442,8 +453,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	var blockParams []jen.Code
 	
 	blockParams = append( blockParams, jen.Id(return_var_name).Op("=").Lit(0) )
-	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id(return_var_name), jen.Id("recover").Call())
-	blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
+	//call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id(return_var_name), jen.Id("recover").Call())
+	//blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
 	
 	var params jen.Statement
 	var isPointerRecv bool
@@ -470,7 +481,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		recvParam = recvParam.Id(typeSpec)
 		params = append(params, recvParam)
 		funcName = typeName + "_" + funcName
-		convertCode := getCodeToConvertInParameter(_type, recvParamName, isPointerRecv, outFile)
+		convertCode := getCodeToConvertInParameter(_type, fast.Name.Name, recvParamName, isPointerRecv, outFile)
 		if convertCode != nil {
 			blockParams = append( blockParams, convertCode )
 		}
@@ -545,7 +556,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 					params = append(params, jen.Id(
 						argName(ident.Name)).Id(typeName))
 				}
-				convertCode := getCodeToConvertInParameter(&field.Type, ident.Name, false, outFile)
+				convertCode := getCodeToConvertInParameter(&field.Type, fast.Name.Name, ident.Name, false, outFile)
 				if convertCode != nil {
 					blockParams = append( blockParams, convertCode )
 				}
@@ -612,6 +623,10 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
 	if dependant_list == nil {
 		return false
 	}
+	//Do not allow extern types in function parameters
+	if strings.Index( typeSpec, "C._") >= 0 { 
+		return true
+	}
 	for _, t := range *dependant_list {
 		if strings.HasSuffix(typeSpec, "C." + t) {
 			return true
@@ -621,7 +636,7 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
 }
 
 /*Returns jen code to convert an input parameter from wrapper to original function*/
-func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer bool, outFile *jen.File) jen.Code{
+func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name string, isPointer bool, outFile *jen.File) jen.Code{
 	if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		typeExpr := arrayExpr.Elt
 		if identExpr, isIdent := (typeExpr).(*ast.Ident); isIdent {
@@ -636,7 +651,7 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 		}
 	} else if starExpr, isPointerParam := (*_typeExpr).(*ast.StarExpr); isPointerParam {
 		_type := &starExpr.X
-		return getCodeToConvertInParameter(_type, name, true, outFile)
+		return getCodeToConvertInParameter(_type, packName, name, true, outFile)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
 		if isBasicGoType(typeName) {
@@ -649,10 +664,10 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, name string, isPointer boo
 			}
 		} else {
 			if isPointer {
-				return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(typeName)).
+				return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(packName).Dot(typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			} else {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(typeName)).
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(packName).Dot(typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			}
 		}
@@ -711,13 +726,14 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 		} else if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
 		} else if isInplaceConvertType(typeName) {
+			package_name := getInplaceConvertTypePackage(typeName)
 			if isPointer {
-				return jen.Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C",typeName)).
+				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C", package_name + package_separator + typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			} else {
-				return jen.Id(name).Op("=").Parens(jen.Op("*").
-					Qual("C",typeName)).
+				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C", package_name + package_separator + typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
 			}
 		} else {
@@ -768,6 +784,14 @@ func isInplaceConvertType(typeName string) bool {
 		}
 	}
 	return false
+}
+
+func getInplaceConvertTypePackage(typeName string) string {
+	if val, ok := inplaceConvertTypesPackages[typeName]; ok {
+		return val
+	} else {
+		return "cipher"
+	}
 }
 
 
@@ -849,16 +873,32 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			c_code += arrayElCode + " " + arrayCode
 		}
 	}else if _, isFunc := (type_expr).(*ast.FuncType); isFunc {
-		c_code += "Handle " + name
+		new_name := name
+		if depth == 1 {
+			new_name = package_name + package_separator + name
+		}
+		c_code += "Handle " + new_name
 		result = true
 	}else if _, isIntf := (type_expr).(*ast.InterfaceType); isIntf {
-		c_code += "GoInterface_ " + name
+		new_name := name
+		if depth == 1 {
+			new_name = package_name + package_separator + name
+		}
+		c_code += "GoInterface_ " + new_name
 		result = true
 	}else if _, isChan := (type_expr).(*ast.ChanType); isChan {
-		c_code += "GoChan_ " + name
+		new_name := name
+		if depth == 1 {
+			new_name = package_name + package_separator + name
+		}
+		c_code += "GoChan_ " + new_name
 		result = true
 	}else if _, isMap := (type_expr).(*ast.MapType); isMap {
-		c_code += "GoMap_ " + name
+		new_name := name
+		if depth == 1 {
+			new_name = package_name + package_separator + name
+		}
+		c_code += "GoMap_ " + new_name
 		result = true
 	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
 		targetTypeExpr := starExpr.X
