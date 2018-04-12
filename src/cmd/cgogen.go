@@ -453,8 +453,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	var blockParams []jen.Code
 	
 	blockParams = append( blockParams, jen.Id(return_var_name).Op("=").Lit(0) )
-	//call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id(return_var_name), jen.Id("recover").Call())
-	//blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
+	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id(return_var_name), jen.Id("recover").Call())
+	blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
 	
 	var params jen.Statement
 	var isPointerRecv bool
