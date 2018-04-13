@@ -331,12 +331,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 		}
 		if starExpr, isStar := (*_typeExpr).(*ast.StarExpr); isStar {
 			spec += "*"
-			if isOutput {
-				_typeExpr = nil
-				spec += "C.Handle"
-			} else {
-				_typeExpr = &starExpr.X
-			}
+			_typeExpr = &starExpr.X
 			continue
 		}
 		if ellipsisExpr, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
@@ -402,11 +397,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 		}
 	}
 	if addPointer {
-		if isOutput {
-			return "*C.Handle"
-		} else {
-			return "*" + spec
-		}
+		return "*" + spec
 	}
 	return spec
 }
