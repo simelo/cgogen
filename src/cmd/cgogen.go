@@ -765,8 +765,10 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 			} else {
 				return jen.Op("*").Id(name).Op("=").Qual("C", "Handle").Call(jen.Id("openHandle").Call(jen.Id(argName(name))))
 			}
-		}
-	} 
+		} 
+	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
+		return getCodeToConvertOutParameter(&selectorExpr.X, name, isPointer)
+	}
 	return nil
 }
 
