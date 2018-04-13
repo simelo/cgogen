@@ -729,17 +729,6 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 			return jen.Id("copyString").Call(jen.Id(argName(name)), jen.Id(name))
 		} else if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
-		} else if isInplaceConvertType(typeName) {
-			package_name := getInplaceConvertTypePackage(typeName)
-			if isPointer {
-				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", package_name + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-			} else {
-				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", package_name + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
-			}
 		} else if isSkyArrayType(typeName) {
 			if isPointer {
 				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")),
@@ -751,7 +740,15 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 						jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
 			}
 		} else {
-			//TODO: Handle output conversion
+			/*if isPointer {
+				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C", package_name + package_separator + typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+			} else {
+				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C", package_name + package_separator + typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
+			}*/
 		}
 	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
 		return getCodeToConvertOutParameter(&selectorExpr.X, name, isPointer)
