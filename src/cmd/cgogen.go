@@ -320,7 +320,7 @@ func isExternalName(importName string) bool {
 	}
 }
 
-func typeSpecStr(_typeExpr *ast.Expr, package_name string) string {
+func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string {
 	addPointer := false
 	spec := ""
 	for _typeExpr != nil {
@@ -331,11 +331,16 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string) string {
 		}
 		if starExpr, isStar := (*_typeExpr).(*ast.StarExpr); isStar {
 			spec += "*"
-			_typeExpr = &starExpr.X
+			if isOutput {
+				_typeExpr = nil
+				spec += "C.Handle"
+			} else {
+				_typeExpr = &starExpr.X
+			}
 			continue
 		}
 		if ellipsisExpr, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
-			spec += "..." + typeSpecStr(&ellipsisExpr.Elt, package_name)
+			spec += "..." + typeSpecStr(&ellipsisExpr.Elt, package_name, isOutput)
 			_typeExpr = nil
 			continue
 		}
@@ -362,8 +367,8 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string) string {
 			continue
 		}
 		if mapExpr, isMap := (*_typeExpr).(*ast.MapType); isMap {
-			return spec + "map[" + typeSpecStr(&mapExpr.Key, package_name) + "]" + 
-				typeSpecStr(&mapExpr.Value, package_name)
+			return spec + "map[" + typeSpecStr(&mapExpr.Key, package_name, false) + "]" + 
+				typeSpecStr(&mapExpr.Value, package_name, false)
 		}
 		identExpr, isIdent := (*_typeExpr).(*ast.Ident)
 		selExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr)
@@ -397,7 +402,11 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string) string {
 		}
 	}
 	if addPointer {
-		return "*" + spec
+		if isOutput {
+			return "*C.Handle"
+		} else {
+			return "*" + spec
+		}
 	}
 	return spec
 }
@@ -475,7 +484,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		}
 		recvParamName := receiver.List[0].Names[0].Name
 		recvParam := jen.Id(argName(recvParamName))
-		typeSpec := typeSpecStr(_type, fast.Name.Name)
+		typeSpec := typeSpecStr(_type, fast.Name.Name, false)
 		if isTypeSpecInDependantList( typeSpec, dependant_types ) {
 			isDependant = true
 			if cfg.IgnoreDependants {
@@ -520,7 +529,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	for fieldIdx, field := range allparams {
 		if fieldIdx >= return_fields_index {
 			// Field in return types list
-			typeName := typeSpecStr(&field.Type, fast.Name.Name)
+			typeName := typeSpecStr(&field.Type, fast.Name.Name, true)
 			if isTypeSpecInDependantList( typeName, dependant_types ) {
 				isDependant = true
 				if cfg.IgnoreDependants {
@@ -547,7 +556,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 				if nameIdx != lastNameIdx {
 					params = append(params, jen.Id(argName(ident.Name)))
 				} else {
-					typeName := typeSpecStr(&field.Type, fast.Name.Name)
+					typeName := typeSpecStr(&field.Type, fast.Name.Name, false)
 					if isTypeSpecInDependantList( typeName, dependant_types ) {
 						isDependant = true
 						if cfg.IgnoreDependants {
@@ -740,7 +749,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 					Qual("C", package_name + package_separator + typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
 			}
-		} else {
+		} else if isSkyArrayType(typeName) {
 			if isPointer {
 				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")),
 							jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),			
@@ -749,6 +758,12 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]")),
 						jen.Qual("unsafe", "Pointer").Call(jen.Id(name)), 
 						jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
+			}
+		} else {
+			if isPointer {
+				return jen.Op("*").Id(name).Op("=").Qual("C", "Handle").Call(jen.Id("openHandle").Call(jen.Op("*").Id(argName(name))))
+			} else {
+				return jen.Op("*").Id(name).Op("=").Qual("C", "Handle").Call(jen.Id("openHandle").Call(jen.Id(argName(name))))
 			}
 		}
 	} 
