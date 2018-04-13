@@ -760,15 +760,11 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, name string, isPointer bo
 						jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
 			}
 		} else {
-			if isPointer {
-				return jen.Op("*").Id(name).Op("=").Qual("C", "Handle").Call(jen.Id("openHandle").Call(jen.Op("*").Id(argName(name))))
-			} else {
-				return jen.Op("*").Id(name).Op("=").Qual("C", "Handle").Call(jen.Id("openHandle").Call(jen.Id(argName(name))))
-			}
-		} 
+			//TODO: Handle output conversion
+		}
 	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
 		return getCodeToConvertOutParameter(&selectorExpr.X, name, isPointer)
-	}
+	}	
 	return nil
 }
 
