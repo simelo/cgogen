@@ -692,10 +692,10 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 			} else {
 				extern_package = identExpr.Name
 				if isPointer {
-					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
+					return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 				} else {
-					return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
+					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 				}
 			}
