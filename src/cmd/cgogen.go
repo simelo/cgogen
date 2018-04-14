@@ -165,7 +165,7 @@ func main() {
 	
 	packagePath := ""
 	if get_package_path_from_file_name {
-		packagePath = getPackagePath(cfg.Path) + "/" + fast.Name.Name
+		packagePath = getPackagePathFromFileName(cfg.Path) + "/" + fast.Name.Name
 	}
 	if packagePath == "" {
 		packagePath = fast.Name.Name
@@ -410,7 +410,11 @@ func resultName(name string) string {
 	return "__" + name
 }
 
-func getPackagePath(filePath string) string {
+/*
+Get the package path from file name. Assumes that file is formed by joining path folders with dot
+Example: pack.folder1.folder2  ==>  pack/folder1/folder2
+*/
+func getPackagePathFromFileName(filePath string) string {
 	packagePath := ""
 	folders := strings.Split(filePath, "/")
 	if len(folders) > 0 {
@@ -420,7 +424,7 @@ func getPackagePath(filePath string) string {
 			packageFolders = packageFolders[:len(packageFolders)-2]
 			var result []string
 			for _, s := range packageFolders {
-				if s == "internal" || s == "example" {
+				if s == "internal" || s == "example" { 
 					break
 				} else {
 					result = append( result, s)
@@ -436,7 +440,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	isDependant = false
 	packagePath := ""
 	if get_package_path_from_file_name {
-		packagePath = getPackagePath(cfg.Path)
+		packagePath = getPackagePathFromFileName(cfg.Path)
 	}
 	if packagePath == "" {
 		packagePath = fast.Name.Name
