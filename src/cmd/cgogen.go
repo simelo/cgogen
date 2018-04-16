@@ -169,6 +169,7 @@ func main() {
 	packagePath := ""
 	if get_package_path_from_file_name {
 		packagePath = getPackagePathFromFileName(cfg.Path) + "/" + fast.Name.Name
+		applog("Package Path: %s " , packagePath)
 	}
 	if packagePath == "" {
 		packagePath = fast.Name.Name
@@ -329,9 +330,13 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 	spec := ""
 	for _typeExpr != nil {
 		if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
-			spec += "[]"
-			_typeExpr = &arrayExpr.Elt
-			continue
+			if arrayExpr.Len != nil || isOutput {
+				return "*C.GoSlice_"
+			} else {
+				spec += "[]"
+				_typeExpr = &arrayExpr.Elt
+				continue
+			}
 		}
 		if starExpr, isStar := (*_typeExpr).(*ast.StarExpr); isStar {
 			spec += "*"
@@ -655,19 +660,27 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
 func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name string, isPointer bool, outFile *jen.File) jen.Code{
 	if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		typeExpr := arrayExpr.Elt
+		arrayLen := ""
+		if arrayExpr.Len != nil {
+			if litExpr, isLit := (arrayExpr.Len).(*ast.BasicLit); isLit {
+				arrayLen = litExpr.Value
+			}
+		}
 		if identExpr, isIdent := (typeExpr).(*ast.Ident); isIdent {
 			typeName := identExpr.Name
+			
+			
 			if isBasicGoType(typeName) {
-				if isPointer {
-					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name)).
+				if isPointer || arrayExpr.Len != nil {
+					return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Id(identExpr.Name)).
 						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
 				} else {
 					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name)).
 						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))))
 				}
 			} else {
-				if isPointer {
-					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(packName).Dot(typeName)).
+				if isPointer || arrayExpr.Len != nil {
+					return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Id(packName).Dot(typeName)).
 						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
 				} else {
 					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(packName).Dot(typeName)).
@@ -681,16 +694,16 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 				typeName := selectorExpr.Sel.Name
 				if found {
 					outFile.ImportAlias(extern_package, identExpr.Name)
-					if isPointer {
-						return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Qual(extern_package, typeName)).
+					if isPointer || arrayExpr.Len != nil {
+						return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Qual(extern_package, typeName)).
 							Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
 					} else {
 						return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Qual(extern_package, typeName)).
 							Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))))
 					}
 				} else {
-					if isPointer {
-						return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name).Dot(typeName)).
+					if isPointer || arrayExpr.Len != nil {
+						return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Id(identExpr.Name).Dot(typeName)).
 							Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
 					} else {
 						return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name).Dot(typeName)).
@@ -713,11 +726,16 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 				return jen.Id(name).Op(":=").Op("*").Id("inplace"+typeName).Call(jen.Id(argName(name)));
 			}
 		} else {
+			//TODO: Check package path for original function
+			packagePath := ""
+			if get_package_path_from_file_name {
+				packagePath = getPackagePathFromFileName(cfg.Path)
+			}
 			if isPointer {
-				return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(packName).Dot(typeName)).
+				return jen.Id(name).Op(":=").Parens(jen.Op("*").Qual(mainPackagePath + packagePath, typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			} else {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(packName).Dot(typeName)).
+				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual(mainPackagePath + packagePath, typeName)).
 						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 			}
 		}
@@ -747,15 +765,8 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 			}
 		}
 	} else if _, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
+		//TODO: stdevEclipse Implement
 		return jen.Id(name).Op(":=").Id(argName(name))
-		/*typeExpr := ellipsisExpr.Elt
-		if identExpr, isIdent := (typeExpr).(*ast.Ident); isIdent {
-			typeName := identExpr.Name
-			if isBasicGoType(typeName) {
-				return jen.Id(name).Op(":=").Id(argName(name))
-			} else {
-			}
-		} */
 	} else if _, isIntf := (*_typeExpr).(*ast.InterfaceType); isIntf {
 		return jen.Id(name).Op(":=").Id("convertToInterface").Call(jen.Id(argName(name)))
 	} else if _, isFunc := (*_typeExpr).(*ast.FuncType); isFunc {
