@@ -769,39 +769,41 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 		} else if isBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
 		} else if isSkyArrayType(typeName) {
+			var argCode jen.Code
 			if isPointer {
-				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")),
+				argCode = jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")
+			} else {
+				argCode = jen.Id(argName(name)).Op("[:]")
+			}
+		
+			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call( argCode ),
 							jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),			
 							jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
-			} else {
-				return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name)).Op("[:]")),
-						jen.Qual("unsafe", "Pointer").Call(jen.Id(name)), 
-						jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
-			}
+			
 		} else {
+			var argCode jen.Code
 			if isPointer {
-				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", package_name + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+				argCode = jen.Id(argName(name))
 			} else {
-				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", package_name + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
+				argCode = jen.Op("&").Id(argName(name))
 			}
+			return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C", package_name + package_separator + typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens( argCode ) )
 		}
 	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
 		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
 		if isIdent {
 			typeName := selectorExpr.Sel.Name
+			var argCode jen.Code
 			if isPointer {
-				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", identExpr.Name + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
+				argCode = jen.Id(argName(name))
 			} else {
-				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", identExpr.Name + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))) )
+				argCode = jen.Op("&").Id(argName(name))
 			}
+			return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C", identExpr.Name + package_separator + typeName)).
+						Parens( jen.Qual("unsafe", "Pointer").Parens( argCode ) )
 		}
 	} else if mapExpr, isMap := (*_typeExpr).(*ast.MapType); isMap {
 		identKeyExpr, isKeyIdent := (mapExpr.Key).(*ast.Ident)
