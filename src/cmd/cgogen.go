@@ -658,6 +658,35 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
 
 /*Returns jen code to convert an input parameter from wrapper to original function*/
 func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name string, isPointer bool, outFile *jen.File) jen.Code{
+	leftPart := jen.Id(name).Op(":=")
+	return getRightCodeToConvertInParameter(leftPart, _typeExpr, packName, name, isPointer, outFile)
+}
+
+func getTypeCastCode(arrayPart *jen.Statement, typeExpr *ast.Expr, 
+					packName string, name string, outFile *jen.File) jen.Code {
+	if identExpr, isIdent := (*typeExpr).(*ast.Ident); isIdent {
+		typeName := identExpr.Name
+		if isBasicGoType(typeName) {
+			return arrayPart.Id(identExpr.Name)
+		} else {
+			return arrayPart.Id(packName).Dot(typeName)
+		}
+	} else if selectorExpr, isSelector := (*typeExpr).(*ast.SelectorExpr); isSelector {
+		if identExpr, isIdent := (selectorExpr.X).(*ast.Ident); isIdent {
+			extern_package, found := findImportPath(identExpr.Name)
+			typeName := selectorExpr.Sel.Name
+			if found {
+				outFile.ImportAlias(extern_package, identExpr.Name)
+				return arrayPart.Qual(extern_package, typeName)
+			} else {
+				return arrayPart.Id(identExpr.Name).Dot(typeName)
+			}
+		}
+	}
+	return nil
+}
+
+func getRightCodeToConvertInParameter(leftPart *jen.Statement, _typeExpr *ast.Expr, packName string, name string, isPointer bool, outFile *jen.File) jen.Code{
 	if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		typeExpr := arrayExpr.Elt
 		arrayLen := ""
@@ -666,51 +695,22 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 				arrayLen = litExpr.Value
 			}
 		}
-		if identExpr, isIdent := (typeExpr).(*ast.Ident); isIdent {
-			typeName := identExpr.Name
-			
-			
-			if isBasicGoType(typeName) {
-				if isPointer || arrayExpr.Len != nil {
-					return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Id(identExpr.Name)).
-						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
-				} else {
-					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name)).
-						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))))
-				}
+		arrayPart := jen.Op("*").Op("[" + arrayLen + "]")
+		arrayTypeCode := getTypeCastCode(arrayPart, &typeExpr, packName, name, outFile)
+		if arrayTypeCode != nil {
+			if !isPointer {
+				leftPart = leftPart.Op("*")
+			}
+			leftPart = leftPart.Parens( arrayTypeCode )
+			var argCode jen.Code
+			if !isPointer && arrayExpr.Len == nil {
+				argCode = jen.Op("&").Id(argName(name))
 			} else {
-				if isPointer || arrayExpr.Len != nil {
-					return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Id(packName).Dot(typeName)).
-						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
-				} else {
-					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(packName).Dot(typeName)).
-						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))))
-				}
+				argCode = jen.Id(argName(name))
 			}
-		} else if selectorExpr, isSelector := (typeExpr).(*ast.SelectorExpr); isSelector {
-			identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
-			if isIdent {
-				extern_package, found := findImportPath(identExpr.Name)
-				typeName := selectorExpr.Sel.Name
-				if found {
-					outFile.ImportAlias(extern_package, identExpr.Name)
-					if isPointer || arrayExpr.Len != nil {
-						return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Qual(extern_package, typeName)).
-							Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
-					} else {
-						return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Qual(extern_package, typeName)).
-							Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))))
-					}
-				} else {
-					if isPointer || arrayExpr.Len != nil {
-						return jen.Id(name).Op(":=").Parens(jen.Op("*").Op("[" + arrayLen + "]").Id(identExpr.Name).Dot(typeName)).
-							Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
-					} else {
-						return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Op("[]").Id(identExpr.Name).Dot(typeName)).
-							Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Op("&").Id(argName(name))))
-					}
-				}
-			}
+			rightCode := jen.Qual("unsafe", "Pointer").Parens(argCode)
+			leftPart = leftPart.Parens(rightCode)
+			return leftPart
 		}
 	} else if starExpr, isPointerParam := (*_typeExpr).(*ast.StarExpr); isPointerParam {
 		_type := &starExpr.X
@@ -718,59 +718,37 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
 		if isBasicGoType(typeName) {
-			return jen.Id(name).Op(":=").Id(argName(name))
+			return leftPart.Id(argName(name))
 		} else if isInplaceConvertType(typeName) {
-			if isPointer {
-				return jen.Id(name).Op(":=").Id("inplace"+typeName).Call(jen.Id(argName(name)));
-			} else {
-				return jen.Id(name).Op(":=").Op("*").Id("inplace"+typeName).Call(jen.Id(argName(name)));
-			}
+			if !isPointer {
+				leftPart = leftPart.Op("*")
+			} 
+			return leftPart.Id("inplace"+typeName).Call(jen.Id(argName(name)))
 		} else {
-			//TODO: Check package path for original function
 			packagePath := ""
 			if get_package_path_from_file_name {
 				packagePath = getPackagePathFromFileName(cfg.Path)
 			}
-			if isPointer {
-				return jen.Id(name).Op(":=").Parens(jen.Op("*").Qual(mainPackagePath + packagePath, typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-			} else {
-				return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual(mainPackagePath + packagePath, typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-			}
+			if !isPointer {
+				leftPart = leftPart.Op("*")
+			} 
+			return leftPart.Parens(jen.Op("*").Qual(mainPackagePath + packagePath, typeName)).
+					Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 		}
-	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
-		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
-		if isIdent {
-			extern_package, found := findImportPath(identExpr.Name)
-			typeName := selectorExpr.Sel.Name
-			if found {
-				outFile.ImportAlias(extern_package, identExpr.Name)
-				if isPointer {
-					return jen.Id(name).Op(":=").Parens(jen.Op("*").Qual(extern_package, typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-				} else {
-					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Qual(extern_package, typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-				}
-			} else {
-				extern_package = identExpr.Name
-				if isPointer {
-					return jen.Id(name).Op(":=").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-				} else {
-					return jen.Id(name).Op(":=").Op("*").Parens(jen.Op("*").Id(identExpr.Name).Dot(typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
-				}
-			}
+	} else if _, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
+		if !isPointer {
+			leftPart = leftPart.Op("*")
 		}
+		typeCastCode := getTypeCastCode(jen.Op("*"), _typeExpr, packName, name, outFile)
+		return leftPart.Parens(typeCastCode).
+			Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) )
 	} else if _, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
 		//TODO: stdevEclipse Implement
-		return jen.Id(name).Op(":=").Id(argName(name))
+		return leftPart.Id(argName(name))
 	} else if _, isIntf := (*_typeExpr).(*ast.InterfaceType); isIntf {
-		return jen.Id(name).Op(":=").Id("convertToInterface").Call(jen.Id(argName(name)))
+		return leftPart.Id("convertToInterface").Call(jen.Id(argName(name)))
 	} else if _, isFunc := (*_typeExpr).(*ast.FuncType); isFunc {
-		return jen.Id(name).Op(":=").Id("copyToFunc").Call(jen.Id(argName(name)))
+		return leftPart.Id("copyToFunc").Call(jen.Id(argName(name)))
 	}
 	return nil
 }
