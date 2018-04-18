@@ -525,10 +525,10 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		typeSpec := typeSpecStr(_type, fast.Name.Name, false)
 		if isTypeSpecInDependantList( typeSpec, dependant_types ) {
 			isDependant = true
-			/*if cfg.IgnoreDependants {
+			if cfg.IgnoreDependants {
 				//TODO: stdevEclipse Check if type can be replaced by another type or handle
 				return
-			}*/
+			}
 		}
 		recvParam = recvParam.Id(typeSpec)
 		params = append(params, recvParam)
@@ -571,10 +571,10 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 			typeName := typeSpecStr(&field.Type, fast.Name.Name, true)
 			if isTypeSpecInDependantList( typeName, dependant_types ) {
 				isDependant = true
-				/*if cfg.IgnoreDependants {
+				if cfg.IgnoreDependants {
 					//TODO: stdevEclipse Check if type can be replaced by another type or handle
 					return
-				}*/
+				}
 			}
 			if rune(typeName[0]) == '[' {
 				typeName = "*C.GoSlice_"
@@ -601,10 +601,10 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 					typeName := typeSpecStr(&field.Type, fast.Name.Name, false)
 					if isTypeSpecInDependantList( typeName, dependant_types ) {
 						isDependant = true
-						/*if cfg.IgnoreDependants {
+						if cfg.IgnoreDependants {
 							//TODO: stdevEclipse Check if type can be replaced by another type or handle
 							return
-						}*/
+						}
 					}
 					params = append(params, jen.Id(
 						argName(ident.Name)).Id(typeName))
