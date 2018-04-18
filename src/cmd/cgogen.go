@@ -1061,7 +1061,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += "Handle " + new_name
 		result = true
-		//dependant = true
+		dependant = true
 	}else if _, isIntf := (type_expr).(*ast.InterfaceType); isIntf {
 		new_name := name
 		if depth == 1 {
@@ -1069,7 +1069,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += "GoInterface_ " + new_name
 		result = true
-		//dependant = true
+		dependant = true
 	}else if _, isChan := (type_expr).(*ast.ChanType); isChan {
 		new_name := name
 		if depth == 1 {
@@ -1077,6 +1077,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += "GoChan_ " + new_name
 		result = true
+		dependant = true
 	}else if _, isMap := (type_expr).(*ast.MapType); isMap {
 		new_name := name
 		if depth == 1 {
@@ -1084,6 +1085,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += "GoMap_ " + new_name
 		result = true
+		dependant = true
 	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
 		targetTypeExpr := starExpr.X
 		type_code, ok, isFieldDependant := processTypeExpression(fast, targetTypeExpr, package_name, "", 
