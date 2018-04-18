@@ -50,7 +50,7 @@ var (
 	}
 )
 
-var typesMap = map[string]string{
+var basicTypesMap = map[string]string{
 	  "int": "GoInt_",
 	  "uint": "GoUint_",
 	  "int8": "GoInt8_",
@@ -70,6 +70,8 @@ var typesMap = map[string]string{
 	  "bool" : "bool",
 	  "error" : "GoInt32_",
 	}
+	
+var customTypesMap = make(map[string]string)
 	
 var inplaceConvertTypesPackages = map[string]string {
 	"PubKeySlice" : "cipher", 
@@ -390,27 +392,33 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 		identExpr, isIdent := (*_typeExpr).(*ast.Ident)
 		selExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr)
 		if isIdent || isSelector {
-			isHandle := false
+			isDealt := false
 			extern_package := package_name
 			typeName := ""
 			if isIdent {
 				typeName = identExpr.Name
-				isHandle = isInHandleTypesList(typeName)
-				if isHandle {
+				isDealt = isInHandleTypesList(typeName)
+				if isDealt {
 					spec = getHandleName(typeName)
+				} else if(isInCustomTypesList(typeName)) {
+					spec = getCustomTypeName(typeName)
+					isDealt = true
 				}
 			} else {
 				typeName = selExpr.Sel.Name
 				identSelExpr, isSelIdent := (selExpr.X).(*ast.Ident)
 				if isSelIdent {
 					extern_package = identSelExpr.Name
-					isHandle = isInHandleTypesList(extern_package + "." + typeName)
-					if isHandle {
+					isDealt = isInHandleTypesList(extern_package + "." + typeName)
+					if isDealt {
 						spec = getHandleName(extern_package + "." + typeName)
+					} else if(isInCustomTypesList(extern_package + "." + typeName)) {
+						spec = getCustomTypeName(extern_package + "." + typeName)
+						isDealt = true
 					}
 				}
 			}
-			if !isHandle {
+			if !isDealt {
 				isExported := isAsciiUpper(rune(typeName[0]))
 				if spec == "" && !addPointer && isExported {
 					addPointer = true
@@ -445,6 +453,11 @@ func isInHandleTypesList(typeName string) bool {
 	return ok
 }
 
+func isInCustomTypesList(typeName string) bool {
+	_, ok := customTypesMap[typeName]
+	return ok
+}
+
 func firstCharToUpper(s string) string {
 	if len(s) > 0 {
 		return strings.ToUpper(s[0:1]) + s[1:]
@@ -455,6 +468,10 @@ func firstCharToUpper(s string) string {
 
 func getHandleName(typeName string) string {
 	return "*C." + handleTypes[typeName] + package_separator + "Handle"
+}
+
+func getCustomTypeName(typeName string) string {
+	return "*C." + customTypesMap[typeName]
 }
 
 /*
@@ -907,7 +924,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 
 /* Returns the corresponding C type for a GO type*/
 func goTypeToCType(goType string) (string, bool) {
-	if val, ok := typesMap[goType]; ok {
+	if val, ok := basicTypesMap[goType]; ok {
 		return val, true
 	} else {
 		return goType, false
@@ -915,7 +932,7 @@ func goTypeToCType(goType string) (string, bool) {
 }
 
 func isBasicGoType(goType string) bool {
-	if _, ok := typesMap[goType]; ok {
+	if _, ok := basicTypesMap[goType]; ok {
 		return true
 	} else {
 		return false
@@ -1200,7 +1217,7 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *[]string) string {
 	result_code := ""
 	var defined_types []string
-	for key, _ := range typesMap {
+	for key, _ := range basicTypesMap {
 		ctype, ok := goTypeToCType(key)
 		if ok {
 			defined_types = append( defined_types, ctype )
@@ -1261,6 +1278,7 @@ func fixExportComment(filePath string){
 
 func processComment(comment string){
 	handlePrefix := "//CGOGEN HANDLES "
+	typeConversionPrefix := "//CGOGEN TYPES_CONVERSION "
 	if strings.HasPrefix(comment, handlePrefix) {
 		handlesPart := comment[len(handlePrefix):]
 		handles := strings.Split( handlesPart, "," )
@@ -1272,6 +1290,16 @@ func processComment(comment string){
 				handleTypes[handleParts[0]] = handleParts[0]
 			}
 		}
-		
+	} else if strings.HasPrefix(comment, typeConversionPrefix) {
+		typesPart := comment[len(typeConversionPrefix):]
+		types := strings.Split( typesPart, "," )
+		for _, t := range types {
+			typesPart := strings.Split(t, "|")
+			if len(typesPart) > 1 {
+				customTypesMap[typesPart[0]] = typesPart[1]
+			} else if len(typesPart) > 0 {
+				customTypesMap[typesPart[0]] = typesPart[0]
+			}
+		}
 	}
 }
