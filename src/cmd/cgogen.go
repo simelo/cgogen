@@ -340,13 +340,13 @@ func isExternalName(importName string) bool {
 	}
 }
 
-func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string {
+func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (string, bool) {
 	addPointer := false
 	spec := ""
 	for _typeExpr != nil {
 		if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 			if arrayExpr.Len != nil || isOutput {
-				return "*C.GoSlice_"
+				return "*C.GoSlice_", true
 			} else {
 				spec += "[]"
 				_typeExpr = &arrayExpr.Elt
@@ -359,15 +359,17 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 			continue
 		}
 		if ellipsisExpr, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
-			spec += "..." + typeSpecStr(&ellipsisExpr.Elt, package_name, isOutput)
-			_typeExpr = nil
-			continue
+			tspec, ok := typeSpecStr(&ellipsisExpr.Elt, package_name, isOutput)
+			if ok {
+				spec += "..." +  tspec
+				_typeExpr = nil
+				continue
+			} else {
+				return "", false
+			}
 		}
 		if _, isFunc := (*_typeExpr).(*ast.FuncType); isFunc {
-			// TODO: Improve func type translation
-			spec += "C.Handle"
-			_typeExpr = nil
-			continue
+			return "", false
 		}
 		if _, isStruct := (*_typeExpr).(*ast.StructType); isStruct {
 			spec += "struct{}"
@@ -375,9 +377,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 			continue
 		}
 		if _, isIntf := (*_typeExpr).(*ast.InterfaceType); isIntf {
-			spec += "*C.GoInterface_"
-			_typeExpr = nil
-			continue
+			return "", false
 		}
 		if _, isChan := (*_typeExpr).(*ast.ChanType); isChan {
 			// TODO: Improve func type translation
@@ -386,8 +386,13 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 			continue
 		}
 		if mapExpr, isMap := (*_typeExpr).(*ast.MapType); isMap {
-			return spec + "map[" + typeSpecStr(&mapExpr.Key, package_name, false) + "]" + 
-				typeSpecStr(&mapExpr.Value, package_name, false)
+			tspeckey, okkey := typeSpecStr(&mapExpr.Key, package_name, false)
+			tspecvalue, okvalue := typeSpecStr(&mapExpr.Key, package_name, false)
+			if okkey && okvalue {
+				return spec + "map[" + tspeckey + "]" + tspecvalue, true
+			} else {
+				return "", false
+			}
 		}
 		identExpr, isIdent := (*_typeExpr).(*ast.Ident)
 		selExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr)
@@ -403,7 +408,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 				} else if(isInCustomTypesList(typeName)) {
 					spec = getCustomTypeName(typeName)
 					isDealt = true
-				}
+				} 
 			} else {
 				typeName = selExpr.Sel.Name
 				identSelExpr, isSelIdent := (selExpr.X).(*ast.Ident)
@@ -415,6 +420,8 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 					} else if(isInCustomTypesList(extern_package + "." + typeName)) {
 						spec = getCustomTypeName(extern_package + "." + typeName)
 						isDealt = true
+					} else if !isSkycoinName(extern_package) {
+						return "", false
 					}
 				}
 			}
@@ -425,6 +432,10 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 				}
 				if isExported {
 					spec += "C." + extern_package + package_separator
+				} else {
+					if !isBasicGoType(typeName) {
+						return "", false //Don't deal with unexported types
+					}
 				}
 				spec += typeName
 			}
@@ -435,9 +446,9 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) string
 		}
 	}
 	if addPointer {
-		return "*" + spec
+		return "*" + spec, true
 	}
-	return spec
+	return spec, true
 }
 
 func argName(name string) string {
@@ -539,8 +550,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		}
 		recvParamName := receiver.List[0].Names[0].Name
 		recvParam := jen.Id(argName(recvParamName))
-		typeSpec := typeSpecStr(_type, fast.Name.Name, false)
-		if isTypeSpecInDependantList( typeSpec, dependant_types ) {
+		typeSpec, ok := typeSpecStr(_type, fast.Name.Name, false)
+		if !ok || isTypeSpecInDependantList( typeSpec, dependant_types ) {
 			isDependant = true
 			if cfg.IgnoreDependants {
 				//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -585,8 +596,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	for fieldIdx, field := range allparams {
 		if fieldIdx >= return_fields_index {
 			// Field in return types list
-			typeName := typeSpecStr(&field.Type, fast.Name.Name, true)
-			if isTypeSpecInDependantList( typeName, dependant_types ) {
+			typeName, ok := typeSpecStr(&field.Type, fast.Name.Name, true)
+			if !ok || isTypeSpecInDependantList( typeName, dependant_types ) {
 				isDependant = true
 				if cfg.IgnoreDependants {
 					//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -615,8 +626,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 				if nameIdx != lastNameIdx {
 					params = append(params, jen.Id(argName(ident.Name)))
 				} else {
-					typeName := typeSpecStr(&field.Type, fast.Name.Name, false)
-					if isTypeSpecInDependantList( typeName, dependant_types ) {
+					typeName, ok := typeSpecStr(&field.Type, fast.Name.Name, false)
+					if !ok || isTypeSpecInDependantList( typeName, dependant_types ) {
 						isDependant = true
 						if cfg.IgnoreDependants {
 							//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -1050,6 +1061,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += "Handle " + new_name
 		result = true
+		//dependant = true
 	}else if _, isIntf := (type_expr).(*ast.InterfaceType); isIntf {
 		new_name := name
 		if depth == 1 {
@@ -1057,6 +1069,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		}
 		c_code += "GoInterface_ " + new_name
 		result = true
+		//dependant = true
 	}else if _, isChan := (type_expr).(*ast.ChanType); isChan {
 		new_name := name
 		if depth == 1 {
