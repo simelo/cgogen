@@ -5,7 +5,7 @@ build/*
 *.swo
 *.swp
 *.txt
-src/*
+*.h
 src/cmd/tests/*
 
 
