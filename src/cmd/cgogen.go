@@ -604,7 +604,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 					return
 				}
 			}
-			if rune(typeName[0]) == '[' {
+			if len(typeName) > 0 && rune(typeName[0]) == '[' {
 				typeName = "*C.GoSlice_"
 			} else if(deal_out_string_as_gostring && typeName == "string") {
 				typeName = "*C.GoString_"
