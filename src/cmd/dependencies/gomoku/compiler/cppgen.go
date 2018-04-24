@@ -119,6 +119,7 @@ func init() {
 		types.Complex128:    {"0, 0", "moku::complex<double>"},
 		types.Complex64:     {"0, 0", "moku::complex<float>"},
 		types.UntypedRune:   {"0", "uint32_t"},
+		types.UntypedNil: 	 {"std::nullptr", "void*"},
 	}
 	goTypeToBasic = map[string]types.BasicKind{
 		"bool":       types.Bool,
@@ -236,7 +237,7 @@ func (c *cppGen) toTypeSig(t types.Type) (string, error) {
 		if v, ok := basicTypeToCpp[typ.Kind()]; ok {
 			return v.typ, nil
 		}
-
+		
 		return "", errors.Errorf("unsupported basic type: %s", typ)
 
 	case *types.Tuple:
@@ -822,6 +823,26 @@ func (c *cppGen) genMapType(m *ast.MapType) (string, error) {
 	return fmt.Sprintf("std::map<%s, %s>", k, v), nil
 }
 
+func (c *cppGen) genChanType(channel *ast.ChanType) (string, error) {
+	v, err := c.genExpr(channel.Value)
+	if err != nil {
+		return "", errors.Wrap(err, "could not generate expression for value in channel type")
+	}
+	v = c.createTypeDef(v)
+	var dirMod string
+	dirMod = "true, true"
+	/*switch channel.Dir {
+	case types.SendRecv:
+		dirMod = "true, true"
+	case types.SendOnly:
+		dirMod = "true, false"
+	case types.RecvOnly:
+		dirMod = "false, true"
+	}*/
+
+	return fmt.Sprintf("moku::channel<%s, %s>", v, dirMod), nil
+}
+
 func (c *cppGen) genStructType(s *ast.StructType) (string, error) {
 	if len(s.Fields.List) > 0 {
 		return "", errors.Errorf("could not generate structure fields")
@@ -1003,6 +1024,9 @@ func (c *cppGen) genExpr(x ast.Expr) (string, error) {
 		
 	case *ast.StructType:
 		return c.genStructType(x)
+		
+	case *ast.ChanType:
+		return c.genChanType(x)
 	}
 }
 
@@ -1957,6 +1981,21 @@ func (c *cppGen) walk(gen *nodeGen, node ast.Node) error {
 		return c.genBranchStmt(gen, n)
 
 	case *ast.GenDecl, *ast.DeclStmt:
+		return nil
+		
+	case *ast.TypeSwitchStmt:
+		return nil
+		
+	case *ast.ChanType:
+		return nil
+		
+	case *ast.SendStmt:
+		return nil
+		
+	case *ast.SelectStmt:
+		return nil
+		
+	case *ast.GoStmt:
 		return nil
 	}
 }
