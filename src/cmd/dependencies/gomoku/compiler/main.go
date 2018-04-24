@@ -11,6 +11,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 	"golang.org/x/tools/go/loader"
@@ -80,16 +81,28 @@ func (c *Compiler) genFile(name string, pkg *loader.PackageInfo, ast *ast.File, 
 		return err
 	}
 	defer f.Close()
+	var faux *os.File
+	faux = nil
+	auxname := getAuxFileName(name)
+	faux, err = os.OpenFile(auxname, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer faux.Close()
+	
 
-	return out(&cppGen{
+	result := out(&cppGen{
 		fset:                    c.program.Fset,
 		ast:                     ast,
 		pkg:                     pkg.Pkg,
 		inf:                     pkg.Info,
 		output:                  f,
+		aux:					 faux,
+		auxName:				 auxname,
 		symFilter:               &c.symFilter,
 		typeAssertFuncGenerated: make(map[string]struct{}),
 	})
+	return result
 }
 
 func (c *Compiler) genPackage(pkg *loader.PackageInfo) error {
@@ -111,6 +124,16 @@ func (c *Compiler) genPackage(pkg *loader.PackageInfo) error {
 	}
 
 	return nil
+}
+
+func getAuxFileName(name string) string{
+	if strings.HasSuffix(name, ".h"){
+		return name[:len(name)-2] + ".aux.h"
+	} else if strings.HasSuffix(name, ".cpp"){
+		return name[:len(name)-4] + ".aux.h"
+	} else {
+		return name + ".aux.h"
+	}
 }
 
 func clearDirectory(path string) error {

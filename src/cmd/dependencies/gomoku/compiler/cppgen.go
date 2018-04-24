@@ -26,8 +26,10 @@ type cppGen struct {
 
 	initPkgs []string
 
-	input  io.Reader
-	output io.Writer
+	input  	io.Reader
+	output 	io.Writer
+	aux	   	io.Writer
+	auxName string
 
 	recvs varStack
 
@@ -47,6 +49,12 @@ type varStack struct {
 }
 
 type ifaceFilter int
+
+const (
+	string_type = "std::string"
+	map_type = "std::map"
+	empty_struct = "struct {  }"
+)
 
 const (
 	concreteType ifaceFilter = iota
@@ -84,6 +92,7 @@ type basicTypeInfo struct {
 
 var basicTypeToCpp map[types.BasicKind]basicTypeInfo
 var goTypeToBasic map[string]types.BasicKind
+var typesDefined = map[string]string{}
 
 func init() {
 	basicTypeToCpp = map[types.BasicKind]basicTypeInfo{
@@ -180,7 +189,7 @@ func (c *cppGen) toTypeSig(t types.Type) (string, error) {
 		if err != nil {
 			return "", errors.Wrap(err, "could not determine type signature for map element")
 		}
-
+		v = c.createTypeDef(v)
 		return fmt.Sprintf("std::map<%s, %s>", k, v), nil
 
 	case *types.Slice:
@@ -612,6 +621,12 @@ func (c *cppGen) genNamedSliceType(name string, t *types.Slice) error {
 	return err
 }
 
+func (c *cppGen) genNamedMapType(name string, t *types.Map) error {
+	s, err := c.toTypeSig(t)
+	fmt.Fprintf(c.output, "\ntypedef %s %s\n", s, name)
+	return err
+}
+
 func (c *cppGen) genNamedType(name string, n *types.Named) (err error) {
 	switch t := n.Underlying().(type) {
 	default:
@@ -632,6 +647,8 @@ func (c *cppGen) genNamedType(name string, n *types.Named) (err error) {
 	case *types.Slice:
 		return c.genNamedSliceType(name, t)
 
+	case *types.Map:
+		return c.genNamedMapType(name, t)
 	}
 }
 
@@ -690,8 +707,8 @@ func (c *cppGen) genConst(gen *nodeGen, k *types.Const, mainBlock bool) error {
 }
 
 func (c *cppGen) genNamespace(p *types.Package) (err error) {
+	
 	s := p.Scope()
-
 	if c.symFilter.once(s, "#pragma once") {
 		fmt.Fprintln(c.output, "#pragma once")
 	}
@@ -701,6 +718,11 @@ func (c *cppGen) genNamespace(p *types.Package) (err error) {
 		if c.symFilter.once(s, include) {
 			fmt.Fprintln(c.output, include)
 		}
+	}
+	
+	if c.aux != nil {
+		include := fmt.Sprintf("#include \"%s\"", c.auxName)
+		fmt.Fprintln(c.output, include)
 	}
 
 	if len(s.Names()) == 0 {
@@ -735,7 +757,6 @@ func (c *cppGen) genNamespace(p *types.Package) (err error) {
 		if name == "main" {
 			name = "_main"
 		}
-		fmt.Println("Working on :", name)
 		switch t := obj.(type) {
 		case *types.Func:
 			if t.Name() == "init" {
@@ -766,6 +787,28 @@ func (c *cppGen) genNamespace(p *types.Package) (err error) {
 	return nil
 }
 
+/*
+* Creates a type def and saves it to an auxiliary file
+* unless it is a basic type
+*/
+func (c *cppGen) createTypeDef(typeDefinition string) string{
+	_, isBasic := goTypeToBasic[typeDefinition]
+	if isBasic || c.aux == nil || typeDefinition == string_type {
+		return typeDefinition
+	} else {
+		t, ok := typesDefined[typeDefinition]
+		if ok {
+			return t
+		} else {
+			typeName := c.newIdent()
+			typesDefined[typeDefinition] = typeName
+			fmt.Fprintf(c.aux, "typedef %s %s;\n", typeDefinition, typeName)
+			return typeName
+		}
+		return typeDefinition
+	}
+}
+
 func (c *cppGen) genMapType(m *ast.MapType) (string, error) {
 	k, err := c.genExpr(m.Key)
 	if err != nil {
@@ -775,8 +818,17 @@ func (c *cppGen) genMapType(m *ast.MapType) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "could not generate expression for value in map type")
 	}
-
+	v = c.createTypeDef(v)
 	return fmt.Sprintf("std::map<%s, %s>", k, v), nil
+}
+
+func (c *cppGen) genStructType(s *ast.StructType) (string, error) {
+	if len(s.Fields.List) > 0 {
+		return "", errors.Errorf("could not generate structure fields")
+	}
+	structCode := "struct {  }"
+	v := c.createTypeDef(structCode)
+	return v, nil
 }
 
 func (c *cppGen) genCallExpr(ce *ast.CallExpr) (string, error) {
@@ -948,6 +1000,9 @@ func (c *cppGen) genExpr(x ast.Expr) (string, error) {
 
 	case *ast.Ident:
 		return c.genIdent(x)
+		
+	case *ast.StructType:
+		return c.genStructType(x)
 	}
 }
 
@@ -1075,7 +1130,7 @@ func (c *cppGen) genFuncDecl(gen *nodeGen, f *ast.FuncDecl) (err error) {
 	}
 
 	err = c.genScopeAndBody(gen, f.Body, f.Type, true, filt)
-	return errors.Wrap(err, "could not generate function body")
+	return errors.Wrap(err, "could not generate function body:" + f.Name.Name)
 }
 
 func (c *cppGen) genAssignStmt(gen *nodeGen, a *ast.AssignStmt) (err error) {
