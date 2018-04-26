@@ -26,10 +26,11 @@ type cppGen struct {
 
 	initPkgs []string
 
-	input  	io.Reader
-	output 	io.Writer
-	aux	   	io.Writer
-	auxName string
+	input  		io.Reader
+	output 		io.Writer
+	aux	   		io.Writer
+	auxName 	string
+	fileName 	string
 
 	recvs varStack
 
@@ -39,6 +40,9 @@ type cppGen struct {
 	isTieAssign bool
 
 	symFilter *symbolFilter
+	
+	forwardDeclarations []string
+	anonymouseTypes []string
 
 	typeAssertFuncGenerated map[string]struct{}
 }
@@ -530,6 +534,8 @@ func (c *cppGen) genStructFields(s *types.Struct) ([]string, error) {
 }
 
 func (c *cppGen) genStruct(name string, s *types.Struct, n *types.Named) (err error) {
+	c.forwardDeclarations = append(c.forwardDeclarations, name)
+	
 	fmt.Fprintf(c.output, "\nstruct %s", name)
 
 	ifaces, err := c.genIfaceForType(n, func(ifaces []string) error {
@@ -557,7 +563,7 @@ func (c *cppGen) genStruct(name string, s *types.Struct, n *types.Named) (err er
 
 	fmt.Fprintf(c.output, "};\n")
 
-	fmt.Fprintf(c.output, "template <> inline bool moku::is_nil<%s>(const %s& %s) {", name, name, strings.ToLower(name))
+	/*fmt.Fprintf(c.output, "template <> inline bool moku::is_nil<%s>(const %s& %s) {", name, name, strings.ToLower(name))
 	var nilCmp []string
 	for f := 0; f < s.NumFields(); f++ {
 		f := s.Field(f)
@@ -568,7 +574,7 @@ func (c *cppGen) genStruct(name string, s *types.Struct, n *types.Named) (err er
 		nilCall := fmt.Sprintf("moku::is_nil<%s>(%s.%s)", typ, strings.ToLower(name), f.Name())
 		nilCmp = append(nilCmp, nilCall)
 	}
-	fmt.Fprintf(c.output, "return %s; }", strings.Join(nilCmp, "&&"))
+	fmt.Fprintf(c.output, "return %s; }", strings.Join(nilCmp, "&&"))*/
 
 	c.genTryAssert(ifaces, name)
 
@@ -612,19 +618,19 @@ func (c *cppGen) genBasicType(name string, b *types.Basic, n *types.Named) (err 
 
 func (c *cppGen) genNamedArrayType(name string, t *types.Array) error {
 	s, err := c.toTypeSig(t)
-	fmt.Fprintf(c.output, "\ntypedef %s %s\n", s, name)
+	fmt.Fprintf(c.output, "\ntypedef %s %s;\n", s, name)
 	return err
 }
 
 func (c *cppGen) genNamedSliceType(name string, t *types.Slice) error {
 	s, err := c.toTypeSig(t)
-	fmt.Fprintf(c.output, "\ntypedef %s %s\n", s, name)
+	fmt.Fprintf(c.output, "\ntypedef %s %s;\n", s, name)
 	return err
 }
 
 func (c *cppGen) genNamedMapType(name string, t *types.Map) error {
 	s, err := c.toTypeSig(t)
-	fmt.Fprintf(c.output, "\ntypedef %s %s\n", s, name)
+	fmt.Fprintf(c.output, "\ntypedef %s %s;\n", s, name)
 	return err
 }
 
@@ -713,6 +719,11 @@ func (c *cppGen) genNamespace(p *types.Package) (err error) {
 	if c.symFilter.once(s, "#pragma once") {
 		fmt.Fprintln(c.output, "#pragma once")
 	}
+	
+	fmt.Fprintln(c.output, "#include \"generated_utils.h\"")
+	include := fmt.Sprintf("#include \"%s\"", c.auxName)
+	fmt.Fprintln(c.output, include)
+	
 
 	for _, imp := range p.Imports() {
 		include := fmt.Sprintf("#include \"%s.h\"", imp.Name())
@@ -721,10 +732,6 @@ func (c *cppGen) genNamespace(p *types.Package) (err error) {
 		}
 	}
 	
-	if c.aux != nil {
-		include := fmt.Sprintf("#include \"%s\"", c.auxName)
-		fmt.Fprintln(c.output, include)
-	}
 
 	if len(s.Names()) == 0 {
 		return nil
@@ -786,6 +793,13 @@ func (c *cppGen) genNamespace(p *types.Package) (err error) {
 	}
 
 	return nil
+
+}
+
+func isComplexType(typeDefinition string) bool{
+	return strings.Index(typeDefinition, "*") >= 0 || 
+		strings.Index(typeDefinition, "{") >= 0 ||
+		strings.Index(typeDefinition, "[") >= 0 
 }
 
 /*
@@ -793,8 +807,7 @@ func (c *cppGen) genNamespace(p *types.Package) (err error) {
 * unless it is a basic type
 */
 func (c *cppGen) createTypeDef(typeDefinition string) string{
-	_, isBasic := goTypeToBasic[typeDefinition]
-	if isBasic || c.aux == nil || typeDefinition == string_type {
+	if !isComplexType(typeDefinition) {
 		return typeDefinition
 	} else {
 		t, ok := typesDefined[typeDefinition]
@@ -803,7 +816,8 @@ func (c *cppGen) createTypeDef(typeDefinition string) string{
 		} else {
 			typeName := c.newIdent()
 			typesDefined[typeDefinition] = typeName
-			fmt.Fprintf(c.aux, "typedef %s %s;\n", typeDefinition, typeName)
+			anomType := fmt.Sprintf("typedef %s %s;\n", typeDefinition, typeName)
+			c.anonymouseTypes = append(c.anonymouseTypes, anomType)
 			return typeName
 		}
 		return typeDefinition
@@ -2004,7 +2018,31 @@ func (c *cppGen) GenerateHdr() (err error) {
 	return c.genNamespace(c.pkg)
 }
 
+func getFileNamePart(fileName string) string {
+	parts := strings.Split(fileName, "\\")
+	if len(parts) == 1 {
+		parts = strings.Split(fileName, "/")
+	}
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	} else {
+		return fileName
+	}
+}
+
 func (c *cppGen) GenerateImpl() (err error) {
+	if strings.HasSuffix(c.fileName, ".cpp") {
+		headerName := getFileNamePart(c.fileName)
+		headerName = headerName[:len(headerName)-4] + ".h"
+		include := fmt.Sprintf("#include \"%s\"", headerName)
+		fmt.Fprintln(c.output, include)
+	}
+	
+	
+	fmt.Fprintf(c.output, "namespace %s {\n", c.pkg.Name())
+	defer fmt.Fprintf(c.output, "} // namespace %s\n\n", c.pkg.Name())
+	
+	
 	gen := nodeGen{out: c.output}
 	for _, decl := range c.ast.Decls {
 		if err := c.walk(&gen, ast.Node(decl)); err != nil {
@@ -2012,5 +2050,6 @@ func (c *cppGen) GenerateImpl() (err error) {
 		}
 	}
 
-	return c.genMain()
+	//return c.genMain()
+	return nil
 }

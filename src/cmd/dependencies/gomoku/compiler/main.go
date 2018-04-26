@@ -26,6 +26,11 @@ type Compiler struct {
 	outDir string
 
 	symFilter symbolFilter
+	
+	idents int
+	
+	forwardDeclarations []string
+	anonymouseTypes []string
 }
 
 type symbolFilter struct {
@@ -81,34 +86,53 @@ func (c *Compiler) genFile(name string, pkg *loader.PackageInfo, ast *ast.File, 
 		return err
 	}
 	defer f.Close()
-	var faux *os.File
-	faux = nil
-	auxname := getAuxFileName(name)
-	faux, err = os.OpenFile(auxname, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		return err
-	}
-	defer faux.Close()
 	
-
-	result := out(&cppGen{
+	auxName := fmt.Sprintf("%s_aux.h", ast.Name.Name)
+	
+	cGen := cppGen{
 		fset:                    c.program.Fset,
 		ast:                     ast,
 		pkg:                     pkg.Pkg,
 		inf:                     pkg.Info,
 		output:                  f,
-		aux:					 faux,
-		auxName:				 auxname,
+		fileName:				 name,	
+		auxName:				 auxName,
 		symFilter:               &c.symFilter,
 		typeAssertFuncGenerated: make(map[string]struct{}),
-	})
+	}
+	
+	cGen.idents = c.idents
+	result := out(&cGen)
+	c.idents = cGen.idents
+	c.forwardDeclarations = append(c.forwardDeclarations, cGen.forwardDeclarations...)
+	c.anonymouseTypes = append(c.anonymouseTypes, cGen.anonymouseTypes...)
 	return result
+}
+
+func createAuxFile(name string, forwards []string, anomTypes []string) error{
+	var faux *os.File
+	faux = nil
+	var err error
+	faux, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	for _, f := range forwards {
+		fmt.Fprintf(faux, "struct %s;\n", f)
+	}
+	for _, at := range anomTypes {
+		fmt.Fprintf(faux, at)
+	}
+	defer faux.Close()
+	return nil
+	
 }
 
 func (c *Compiler) genPackage(pkg *loader.PackageInfo) error {
 	genImpl := func(gen *cppGen) error { return gen.GenerateImpl() }
 	genHdr := func(gen *cppGen) error { return gen.GenerateHdr() }
 
+	
 	for _, ast := range pkg.Files {
 		name := fmt.Sprintf("%s.cpp", ast.Name.Name)
 		err := c.genFile(filepath.Join(c.outDir, name), pkg, ast, genImpl)
@@ -121,6 +145,8 @@ func (c *Compiler) genPackage(pkg *loader.PackageInfo) error {
 		if err != nil {
 			return err
 		}
+		name = fmt.Sprintf("%s_aux.h", ast.Name.Name)
+		createAuxFile(filepath.Join(c.outDir, name), c.forwardDeclarations, c.anonymouseTypes)
 	}
 
 	return nil
@@ -128,11 +154,11 @@ func (c *Compiler) genPackage(pkg *loader.PackageInfo) error {
 
 func getAuxFileName(name string) string{
 	if strings.HasSuffix(name, ".h"){
-		return name[:len(name)-2] + ".aux.h"
+		return name[:len(name)-2] + "_aux.h"
 	} else if strings.HasSuffix(name, ".cpp"){
-		return name[:len(name)-4] + ".aux.h"
+		return name[:len(name)-4] + "_aux.h"
 	} else {
-		return name + ".aux.h"
+		return name + "_aux.h"
 	}
 }
 

@@ -70,16 +70,18 @@ var basicTypesMap = map[string]string{
 	  "bool" : "bool",
 	  "error" : "GoInt32_",
 	}
-	
+
+//Map of types that will replaced by custom types	
 var customTypesMap = make(map[string]string)
-	
+
+//Types that will use functions of type inplace to convert
 var inplaceConvertTypesPackages = map[string]string {
 	"PubKeySlice" : "cipher", 
 	"Address" : "cipher",
 	"BalanceResult" : "cli",
 }
 
-/*These types will be converted using inplace functions*/
+//These types will be converted using inplace functions
 var inplaceConvertTypes = []string{
 	"PubKeySlice", "Address", "BalanceResult",
 }
@@ -130,11 +132,10 @@ var arrayTypes = []string{
 	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160", 
 }	
 
-
-
+//Imports used in this code file
 var importDefs [](*ast.GenDecl)
+//types that will be replaced by handles
 var handleTypes map[string]string
-
 var package_separator = "__"
 var return_var_name = "____error_code"
 var return_err_name = "____return_err"
@@ -292,6 +293,7 @@ func isAsciiUpper(c rune) bool {
 	return c >= 'A' && c <= 'Z'
 }
 
+//Returns the path of the package imported
 func findImportPath(importName string) (string, bool) {
 	for _, importDef := range importDefs {
 		for _, s := range importDef.Specs{
@@ -511,6 +513,7 @@ func getPackagePathFromFileName(filePath string) string {
 	return packagePath
 }
 
+//Create code for wrapper function
 func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependant_types *[]string) (isDependant bool) {
 	isDependant = false
 	packagePath := ""
@@ -709,6 +712,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	return
 }
 
+//Check if type is in dependant list
 func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
 	if dependant_list == nil {
 		return false
@@ -725,8 +729,7 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
 	return false
 }
 
-
-
+//Creates code to make a typecast
 func getTypeCastCode(leftPart *jen.Statement, typeExpr *ast.Expr, 
 					packName string, name string, outFile *jen.File) jen.Code {
 	if identExpr, isIdent := (*typeExpr).(*ast.Ident); isIdent {
@@ -1275,6 +1278,7 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 	return result_code
 }
 
+//Remove extra space in export indication
 func fixExportComment(filePath string){
 	f, err := os.Open(filePath)
 	check(err)
