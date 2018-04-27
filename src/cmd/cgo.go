@@ -106,9 +106,15 @@ func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (string, bool) {
 		return c.processSelector(selectorExpr)
 	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
 		return c.processPointer(starExpr)
+	} else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray{
+		return c.processArray(arrayExpr)
 	} else {
 		applog("Unknown type: %v", type_expr)
 	}
+	return "", false
+}
+
+func (c *CCompiler) processArray(arrayExpr *ast.ArrayType) (string, bool) {
 	return "", false
 }
 
