@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"go/token"
 	"fmt"
+	"strings"
 )
 
 type CCompiler struct{
@@ -12,15 +13,23 @@ type CCompiler struct{
 	ccode  			*CCode
 	includes		[]string
 	currentType		*TypeDef
+	identsCount		int
 }
 
 type CCode struct {
 	typedefs 		[]TypeDef
+	constdefs		[]ConstDef
+}
+
+type ConstDef struct{
+	name string
+	value string
 }
 
 type TypeDef struct {
 	name 			string
 	ccode 			string
+	suffix 			string
 	dependencies 	[]string
 	defType			string // struct, map, whatever
 }
@@ -38,6 +47,14 @@ func (c *CCompiler) GetHeaderCode() (header string) {
 		header += fmt.Sprintf("#include \"%s\"\n", include)
 	}
 	
+	header += "\n\n"
+	
+	for _, constDef := range c.ccode.constdefs {
+		header += "#define " + constDef.name + " " + constDef.value + "\n"
+	}
+	
+	header += "\n\n"
+	
 	for _, typedef := range c.ccode.typedefs {
 		if typedef.defType != "" {
 			prefix := c.source.Name.Name + package_separator
@@ -45,9 +62,11 @@ func (c *CCompiler) GetHeaderCode() (header string) {
 		}
 	}
 	
+	header += "\n\n"
+	
 	for _, typedef := range c.ccode.typedefs {
-		prefix := c.source.Name.Name + package_separator
-		header += "typedef " + typedef.ccode + " " + prefix + typedef.name + ";\n"
+		header += "typedef " + typedef.ccode + " " + typedef.name + 
+			typedef.suffix + ";\n"
 	}
 	return
 }
@@ -61,11 +80,39 @@ func (c *CCompiler) Compile() {
 				c.processType(decl)
 			} else if decl.Tok == token.IMPORT {
 				c.processImport(decl)
+			} else if decl.Tok == token.CONST {
+				c.processConstExpression(decl)
 			} else {
-				c.processUnknown(_decl)
+				applog("Unknown declaration %s", decl.Tok)
 			}
 		} else {
 			c.processUnknown(_decl)
+		}
+	}
+}
+
+func getTypeOfVar(decl ast.Expr) string{
+	s := reflect.ValueOf(decl).Elem()
+	return fmt.Sprintf("%s", s.Type())
+}
+
+func (c *CCompiler) processConstExpression(decl *ast.GenDecl){
+	for _, s := range decl.Specs{
+		if valueSpec, isValueSpec := (s).(*ast.ValueSpec); isValueSpec {
+			for index, name := range valueSpec.Names {
+				if index < len(valueSpec.Values){
+					value := valueSpec.Values[index]
+					value_code, ok := c.processConstValueExpression(value)
+					if ok {
+						consDef := ConstDef{name: name.Name, value: value_code}
+						c.ccode.constdefs = append(c.ccode.constdefs, consDef)
+					} else {
+						applog("Can't handle const expression value : %v", value)
+					}
+				}
+			}
+		} else {
+			applog("Don't know what to this const or var expression")
 		}
 	}
 }
@@ -77,6 +124,7 @@ func (c *CCompiler) processUnknown(decl ast.Decl){
 }
 
 func (c *CCompiler) processImport(decl *ast.GenDecl){
+	
 }
 
 func (c *CCompiler) processType(tdecl *ast.GenDecl){
@@ -85,9 +133,12 @@ func (c *CCompiler) processType(tdecl *ast.GenDecl){
 			typedef := TypeDef{name:typeSpec.Name.Name}
 			typedef.defType = ""
 			c.currentType = &typedef
-			code, ok := c.processTypeExpression( typeSpec.Type )
+			typeName := c.source.Name.Name + package_separator + typeSpec.Name.Name
+			code, ok, suffix := c.processTypeExpression( typeSpec.Type)
 			if ok {
+				typedef.name = typeName
 				typedef.ccode = code
+				typedef.suffix = suffix
 				c.ccode.typedefs = append( c.ccode.typedefs, typedef) 
 			}
 			c.currentType = nil
@@ -97,32 +148,105 @@ func (c *CCompiler) processType(tdecl *ast.GenDecl){
 	}
 }
 
-func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (string, bool) {
+func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (code string, result bool, suffix string) {
+	code = ""
+	result = false
+	suffix = ""
 	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
-		return c.processStructType( typeStruct )
+		code, result = c.processStructType( typeStruct)
 	} else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
-		return c.processIdentifier(identExpr)
+		code, result = c.processIdentifier(identExpr)
 	} else if selectorExpr, isSelector := (type_expr).(*ast.SelectorExpr); isSelector {
-		return c.processSelector(selectorExpr)
+		code, result = c.processSelector(selectorExpr)
 	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
-		return c.processPointer(starExpr)
+		code, result = c.processPointer(starExpr)
 	} else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray{
-		return c.processArray(arrayExpr)
+		code, result, suffix = c.processArray(arrayExpr)
+	} else if mapExpr, isMap := (type_expr).(*ast.MapType); isMap {
+		code, result = c.processMap(mapExpr)
 	} else {
 		applog("Unknown type: %v", type_expr)
+	}
+	return
+}
+
+func (c *CCompiler) processMap(mapExpr *ast.MapType) (string, bool) {
+	mapKeyCode, okKey, keySuffix := c.processTypeExpression(mapExpr.Key)
+	mapValueCode, okMap, valueSuffix := c.processTypeExpression(mapExpr.Value)
+	if okKey && okMap {
+		mapKeyCode = c.createTypeDef( mapKeyCode + keySuffix )
+		mapValueCode = c.createTypeDef( mapValueCode + valueSuffix )
+		return fmt.Sprintf("GoMap_(%s,%s)", mapKeyCode, mapValueCode), true
 	}
 	return "", false
 }
 
-func (c *CCompiler) processArray(arrayExpr *ast.ArrayType) (string, bool) {
+func (c *CCompiler) processConstValueExpression(arrayLen ast.Expr) (string, bool) {
+	if litExpr, isLit := (arrayLen).(*ast.BasicLit); isLit {
+		return litExpr.Value, true
+	} else if binExpr, isBinary := (arrayLen).(*ast.BinaryExpr); isBinary {
+		leftExpr, okLeft := c.processConstValueExpression(binExpr.X)
+		rightExpr, okRight := c.processConstValueExpression(binExpr.Y)
+		if okLeft && okRight {
+			c_code := fmt.Sprintf("%s %s %s", leftExpr, binExpr.Op, rightExpr)
+			return c_code, true
+		}
+	} else if parensExpr, isParens := (arrayLen).(*ast.ParenExpr); isParens {
+		c_code, ok := c.processConstValueExpression(parensExpr.X)
+		if ok {
+			return "(" + c_code + ")", true
+		} 
+	} else if identExpr, isIdent := (arrayLen).(*ast.Ident); isIdent {
+		return identExpr.Name, true
+	} else if selectorExpr, isSelector := (arrayLen).(*ast.SelectorExpr); isSelector {
+		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
+		if isIdent {
+			return identExpr.Name + package_separator + selectorExpr.Sel.Name, true
+		} else {
+			applog("Selector with complex expression in array length")
+			return "", false
+		}
+	} else {
+		applog("Can't deal with this array len type %s", getTypeOfVar(arrayLen))
+	}
 	return "", false
+}
+
+func (c *CCompiler) processArray(arrayExpr *ast.ArrayType) (string, bool, string) {
+	var arrayLenCode string
+	var arrayElemCode string
+	var ok bool
+	var suffix string
+	if arrayExpr.Len == nil {
+		ok = true
+	} else {
+		arrayLenCode, ok = c.processConstValueExpression(arrayExpr.Len)
+		if !ok {
+			applog("Couldn't process array length expression")
+		}
+	}
+	if ok {
+		arrayElemCode, ok, suffix = c.processTypeExpression(arrayExpr.Elt)
+	} else {
+		applog("Couldn't process array length expression")
+	}
+	if ok {
+		if arrayExpr.Len == nil {
+			arrayElemCode = c.createTypeDef(arrayElemCode)
+			return fmt.Sprintf("GoSlice_(%s) ", arrayElemCode), true, ""
+		} else {
+			arrayElemCode = c.createTypeDef(arrayElemCode)
+			return arrayElemCode, true, fmt.Sprintf("%s[%s]", suffix, arrayLenCode)
+		}
+	}
+	return "", false, ""
 }
 
 func (c *CCompiler) processPointer(starExpr *ast.StarExpr) (string, bool) {
 	targetTypeExpr := starExpr.X
-	code, ok := c.processTypeExpression(targetTypeExpr)
+	code, ok, suffix := c.processTypeExpression(targetTypeExpr)
 	if ok {
-		return code + "*", true
+		return code + suffix + "*", true
 	} else {
 		return "", false
 	}
@@ -163,9 +287,9 @@ func (c *CCompiler) processStructType(typeStruct *ast.StructType) (string, bool)
 			names = append( names, "_unnamed")
 		}
 		for _, fieldName := range names{
-			code, ok := c.processTypeExpression(field.Type)
+			code, ok, suffix := c.processTypeExpression(field.Type)
 			if ok {
-				c_code += code + " " + fieldName + ";\n"
+				c_code += code + " " + fieldName + suffix + ";\n"
 			} else {
 				applog("Couldn't process %s", field.Type)
 			}
@@ -176,6 +300,28 @@ func (c *CCompiler) processStructType(typeStruct *ast.StructType) (string, bool)
 		c.currentType.defType = "struct"
 	}
 	return c_code, true
+}
+
+func (c *CCompiler) createIdent() string{
+	c.identsCount++
+	return fmt.Sprintf("_identId%d", c.identsCount)
+}
+
+func (c *CCompiler) createTypeDef(typeDefinition string) string{
+	if !isComplexType(typeDefinition) {
+		return typeDefinition
+	} else {
+		for _, typedef := range c.ccode.typedefs {
+			if typedef.ccode == typeDefinition {
+				return typedef.name
+			}
+		}
+		typeName := c.createIdent()
+		typedef := TypeDef{name: typeName, ccode : typeDefinition}
+		c.ccode.typedefs = append( c.ccode.typedefs, typedef)
+		return typedef.name
+	}
+	
 }
 
 func (c *CCompiler) processFunction(decl *ast.FuncDecl){
@@ -201,6 +347,14 @@ func IsBasicGoType(goType string) bool {
 func GetBasicTypes() map[string]string{
 	return basicTypesMap
 }
+
+func isComplexType(typeDefinition string) bool{
+	return strings.Index(typeDefinition, "*") >= 0 || 
+		strings.Index(typeDefinition, "{") >= 0 ||
+		strings.Index(typeDefinition, "[") >= 0 ||
+		strings.Index(typeDefinition, "(") >= 0 
+}
+
 
 var basicTypesMap = map[string]string{
 	  "int": "GoInt_",
