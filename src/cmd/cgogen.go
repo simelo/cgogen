@@ -206,11 +206,14 @@ func main() {
 		}
 	}
 	
+	if cfg.FullTranspile {
+		compiler := NewCompiler(fast)	
+		compiler.Compile()
+	}
+	
 	for _, _decl := range fast.Decls {
 	
-		if cfg.FullTranspile {
-			
-		}
+		
 		
 		if cfg.ProcessFunctions {
 			if decl, ok := (_decl).(*ast.FuncDecl); ok {
