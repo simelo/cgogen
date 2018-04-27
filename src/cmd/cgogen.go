@@ -6,12 +6,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	//"go/doc"
 	"log"
 	"os"
 	"github.com/dave/jennifer/jen"
 	"strings"
-	"reflect"
+	//"reflect"
 	"bytes"
 )
 
@@ -21,19 +20,23 @@ type Config struct {
 	ProcessFunctions	bool
 	ProcessTypes		bool
 	OutputFileGO 		string
+	OutputFileC			string
 	OutputFileCH		string
 	ProcessDependencies bool
 	DependOnlyExternal  bool
 	TypeDependencyFile	string
 	FuncDependencyFile	string
 	IgnoreDependants	bool
+	FullTranspile		bool //Full conversion to c code
 }
 
 func (c *Config) register() {
 	flag.StringVar(&c.Path, "i", "", "PATH to source file")
 	flag.StringVar(&c.OutputFileGO, "g", "", "PATH to destination file for go code")
-	flag.StringVar(&c.OutputFileCH, "h", "", "PATH to destination file for C code")
+	flag.StringVar(&c.OutputFileC, "c", "", "PATH to destination file for C code")
+	flag.StringVar(&c.OutputFileCH, "h", "", "PATH to destination file for header C code")
 	flag.BoolVar(&c.Verbose, "v", false, "Print debug message to stdout")
+	flag.BoolVar(&c.FullTranspile, "full", false, "Full conversion to C code")
 	flag.BoolVar(&c.ProcessFunctions, "f", false, "Process functions")
 	flag.BoolVar(&c.ProcessTypes, "t", false, "Process Types")
 	flag.BoolVar(&c.ProcessDependencies, "d", false, "Analyze dependencies")
@@ -88,7 +91,7 @@ var inplaceConvertTypes = []string{
 
 var mainPackagePath = string ("github.com/skycoin/skycoin/src/")
 //var mainPackagePath = string ("")
-	
+/*	
 func dumpObjectScope(pkg ast.Scope){
 	s := reflect.ValueOf(pkg).Elem()
 	typeOfT := s.Type()
@@ -120,13 +123,13 @@ func dumpVar(decl ast.Decl){
 		fmt.Printf("Field %d: %s %s = %v\n", i,
 			typeOfT.Field(i).Name, f.Type(), f.Interface())
 	}
-	/*if identExpr, isIdent := (decl).(*ast.Ident); isIdent {
+	if identExpr, isIdent := (decl).(*ast.Ident); isIdent {
 		if identExpr.Obj != nil {
 			fmt.Println("ObjName: ", identExpr.Obj.Name)
 			fmt.Println("Type: ", identExpr.Obj.Type)
 		}
-	}*/
-}
+	}
+}*/
 
 var arrayTypes = []string{
 	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160", 
@@ -181,14 +184,19 @@ func main() {
 		packagePath = fast.Name.Name
 	}
 
-	outFile := jen.NewFile("main")
 	
-	outFile.CgoPreamble(`
-  #include <string.h>
-  #include <stdlib.h>
-  
-  #include "../../include/skytypes.h"`)
-
+	var outFile *jen.File
+	outFile = nil
+	
+	if cfg.ProcessFunctions {
+		outFile = jen.NewFile("main")
+		
+		outFile.CgoPreamble(`
+	  #include <string.h>
+	  #include <stdlib.h>
+	  
+	  #include "../../include/skytypes.h"`)
+	}
 	
 	typeDefs := make ( [](*ast.GenDecl), 0 )
 	
@@ -199,6 +207,10 @@ func main() {
 	}
 	
 	for _, _decl := range fast.Decls {
+	
+		if cfg.FullTranspile {
+			
+		}
 		
 		if cfg.ProcessFunctions {
 			if decl, ok := (_decl).(*ast.FuncDecl); ok {

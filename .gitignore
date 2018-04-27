@@ -1,3 +1,10 @@
+# Compiled source #
+###################
+*.class
+*.dll
+*.exe
+*.o
+*.so
 
 bin/*
 build/*
