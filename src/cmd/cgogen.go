@@ -53,26 +53,7 @@ var (
 	}
 )
 
-var basicTypesMap = map[string]string{
-	  "int": "GoInt_",
-	  "uint": "GoUint_",
-	  "int8": "GoInt8_",
-	  "int16": "GoInt16_",
-	  "int32": "GoInt32_",
-	  "int64": "GoInt64_",
-	  "byte": "GoUint8_",
-	  "uint8": "GoUint8_",
-	  "uint16": "GoUint16_",
-	  "uint32": "GoUint32_",
-	  "uint64": "GoUint64_",
-	  "float32" : "GoFloat32_",
-	  "float64" : "GoFloat64_",
-	  "complex64" : "GoComplex64_",
-	  "complex128" : "GoComplex128_",
-	  "string" : "GoString_",
-	  "bool" : "bool",
-	  "error" : "GoInt32_",
-	}
+
 
 //Map of types that will replaced by custom types	
 var customTypesMap = make(map[string]string)
@@ -139,7 +120,6 @@ var arrayTypes = []string{
 var importDefs [](*ast.GenDecl)
 //types that will be replaced by handles
 var handleTypes map[string]string
-var package_separator = "__"
 var return_var_name = "____error_code"
 var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
@@ -208,7 +188,11 @@ func main() {
 	
 	if cfg.FullTranspile {
 		compiler := NewCompiler(fast)	
+		compiler.includes = append(compiler.includes, "cgoutils.h")
 		compiler.Compile()
+		if cfg.OutputFileCH != "" {
+			saveTextToFile(cfg.OutputFileCH, compiler.GetHeaderCode())
+		}
 	}
 	
 	for _, _decl := range fast.Decls {
@@ -241,11 +225,7 @@ func main() {
 	if cfg.ProcessTypes {
 		typeDefsCode := processTypeDefs(fast, typeDefs, &dependant_types)
 		if cfg.OutputFileCH != "" {
-			f, err := os.Create(cfg.OutputFileCH)
-			check(err)
-			defer f.Close()
-			f.WriteString( typeDefsCode )
-			f.Sync()
+			saveTextToFile(cfg.OutputFileCH, typeDefsCode)
 		} else {
 			fmt.Println(typeDefsCode)
 		}
@@ -275,6 +255,14 @@ func main() {
 	if cfg.OutputFileGO != "" {
 		fixExportComment(cfg.OutputFileGO)
 	}
+}
+
+func saveTextToFile(fileName string, text string){
+	f, err := os.Create(fileName)
+	check(err)
+	defer f.Close()
+	f.WriteString( text )
+	f.Sync()
 }
 
 func saveDependencyFile(path string, list []string, separator string){
@@ -450,7 +438,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 				if isExported {
 					spec += "C." + extern_package + package_separator
 				} else {
-					if !isBasicGoType(typeName) {
+					if !IsBasicGoType(typeName) {
 						return "", false //Don't deal with unexported types
 					}
 				}
@@ -626,7 +614,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 				typeName = "*C.GoSlice_"
 			} else if(deal_out_string_as_gostring && typeName == "string") {
 				typeName = "*C.GoString_"
-			} else if isBasicGoType(typeName) {
+			} else if IsBasicGoType(typeName) {
 				typeName = "*" + typeName
 			} else if typeName == "map[string]string" {
 				typeName = "*C.GoStringMap_"
@@ -749,7 +737,7 @@ func getTypeCastCode(leftPart *jen.Statement, typeExpr *ast.Expr,
 					packName string, name string, outFile *jen.File) jen.Code {
 	if identExpr, isIdent := (*typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
-		if isBasicGoType(typeName) {
+		if IsBasicGoType(typeName) {
 			return leftPart.Id(identExpr.Name)
 		} else {
 			return leftPart.Id(packName).Dot(typeName)
@@ -827,7 +815,7 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 		return getCodeToConvertInParameter(_type, packName, name, true, outFile)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
-		if isBasicGoType(typeName) {
+		if IsBasicGoType(typeName) {
 			return jenCodeToArray(leftPart.Id(argName(name)))
 		} else if isInHandleTypesList(typeName) {
 			return getLookupHandleCode(name, typeName, isPointer)
@@ -885,7 +873,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 		typeName := identExpr.Name
 		if deal_out_string_as_gostring && typeName == "string" {
 			return jen.Id("copyString").Call(jen.Id(argName(name)), jen.Id(name))
-		} else if isBasicGoType(typeName) {
+		} else if IsBasicGoType(typeName) {
 			return jen.Op("*").Id(name).Op("=").Id(argName(name))
 		} else if isInHandleTypesList(typeName) {
 			var argCode jen.Code
@@ -951,22 +939,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 	return nil
 }
 
-/* Returns the corresponding C type for a GO type*/
-func goTypeToCType(goType string) (string, bool) {
-	if val, ok := basicTypesMap[goType]; ok {
-		return val, true
-	} else {
-		return goType, false
-	}
-}
 
-func isBasicGoType(goType string) bool {
-	if _, ok := basicTypesMap[goType]; ok {
-		return true
-	} else {
-		return false
-	}
-}
 
 func isSkyArrayType(typeName string) bool {
 	for _, t := range arrayTypes {
@@ -1124,7 +1097,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			result = true
 		}
 	}else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
-		type_code, isBasic := goTypeToCType(identExpr.Name)
+		type_code, isBasic := GetCTypeFromGoType(identExpr.Name)
 		if !isBasic {
 			addDependency := false
 			if package_name != fast.Name.Name && !isSkycoinName(package_name) {
@@ -1226,7 +1199,6 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 	isDependant := false
 	for _, s := range tdecl.Specs{
 		if typeSpec, isTypeSpec := (s).(*ast.TypeSpec); isTypeSpec {
-			applog("Processing %v \n", typeSpec.Name.Name)
 			type_c_code, ok, isDependantExpr := processTypeExpression(fast, typeSpec.Type, 
 				fast.Name.Name, typeSpec.Name.Name, defined_types, forwards_declarations, 1,
 				dependant_types)
@@ -1250,8 +1222,8 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *[]string) string {
 	result_code := ""
 	var defined_types []string
-	for key, _ := range basicTypesMap {
-		ctype, ok := goTypeToCType(key)
+	for key, _ := range GetBasicTypes() {
+		ctype, ok := GetCTypeFromGoType(key)
 		if ok {
 			defined_types = append( defined_types, ctype )
 		}
