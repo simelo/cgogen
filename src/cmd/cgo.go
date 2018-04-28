@@ -19,6 +19,7 @@ type CCompiler struct{
 type CCode struct {
 	typedefs 		[]TypeDef
 	constdefs		[]ConstDef
+	forwards		[]string
 }
 
 type ConstDef struct{
@@ -31,20 +32,23 @@ type TypeDef struct {
 	ccode 			string
 	suffix 			string
 	dependencies 	[]string
-	defType			string // struct, map, whatever
+	defType			string // struct, map, whatever this typedef represents
+						   // used for forwards	
 }
 
-func NewCompiler(source *ast.File) (compiler *CCompiler) {
+func NewCompiler() (compiler *CCompiler) {
 	compiler = &CCompiler{}
-	compiler.source = source
 	compiler.ccode = &CCode{}
 	return
 }
 
-func (c *CCompiler) GetHeaderCode() (header string) {
-	header = "#pragma once\n"
-	for _, include := range c.includes {
-		header += fmt.Sprintf("#include \"%s\"\n", include)
+func (c *CCompiler) GetHeaderCode(addIncludes bool) (header string) {
+	header = ""
+	if addIncludes {
+		header += "#pragma once\n"
+		for _, include := range c.includes {
+			header += fmt.Sprintf("#include \"%s\"\n", include)
+		}
 	}
 	
 	header += "\n\n"
@@ -55,23 +59,22 @@ func (c *CCompiler) GetHeaderCode() (header string) {
 	
 	header += "\n\n"
 	
-	for _, typedef := range c.ccode.typedefs {
-		if typedef.defType != "" {
-			prefix := c.source.Name.Name + package_separator
-			header += typedef.defType + " " + prefix + typedef.name + ";\n"
-		}
+	for _, f := range c.ccode.forwards {
+		header += f + ";\n"
 	}
 	
 	header += "\n\n"
 	
+	prefix := c.source.Name.Name + package_separator
 	for _, typedef := range c.ccode.typedefs {
-		header += "typedef " + typedef.ccode + " " + typedef.name + 
+		header += "typedef " + typedef.ccode + " " + prefix + typedef.name + 
 			typedef.suffix + ";\n"
 	}
 	return
 }
 
-func (c *CCompiler) Compile() {
+func (c *CCompiler) Compile(source *ast.File) {
+	c.source = source
 	for _, _decl := range c.source.Decls {
 		if decl, ok := (_decl).(*ast.FuncDecl); ok {
 			c.processFunction(decl)
@@ -89,6 +92,53 @@ func (c *CCompiler) Compile() {
 			c.processUnknown(_decl)
 		}
 	}
+	c.processDependencies()
+}
+
+func (c *CCompiler) processDependencies(){
+	var orderedTypedefs []TypeDef
+	removed := map[int] bool {}
+	var noTypeAdded bool
+	for !noTypeAdded {
+		noTypeAdded = true
+		for index, typeDef := range c.ccode.typedefs {
+			is_removed, ok := removed[index]
+			if !ok || !is_removed {
+				all_deps_in := true
+				for _, dep := range typeDef.dependencies{
+					found_dep := false
+					for _, t := range orderedTypedefs {
+						if dep == t.name {
+							found_dep = true
+							break
+						}
+					}
+					if !found_dep {
+						all_deps_in = false
+						break
+					}
+				}
+				if all_deps_in {
+					orderedTypedefs = append( orderedTypedefs, typeDef)
+					noTypeAdded = false
+					removed[index] = true
+				}
+			}
+		}
+	}
+	prefix := c.source.Name.Name + package_separator
+	for index, typeDef := range c.ccode.typedefs {
+		is_removed, ok := removed[index]
+		if !ok || !is_removed {
+			if typeDef.defType == "struct" {
+				
+				f := "struct " + prefix + typeDef.name
+				c.ccode.forwards = append( c.ccode.forwards, f )
+			}
+			orderedTypedefs = append( orderedTypedefs, typeDef)
+		}
+	}
+	c.ccode.typedefs = orderedTypedefs
 }
 
 func getTypeOfVar(decl ast.Expr) string{
@@ -133,7 +183,7 @@ func (c *CCompiler) processType(tdecl *ast.GenDecl){
 			typedef := TypeDef{name:typeSpec.Name.Name}
 			typedef.defType = ""
 			c.currentType = &typedef
-			typeName := c.source.Name.Name + package_separator + typeSpec.Name.Name
+			typeName := typeSpec.Name.Name
 			code, ok, suffix := c.processTypeExpression( typeSpec.Type)
 			if ok {
 				typedef.name = typeName
@@ -311,15 +361,18 @@ func (c *CCompiler) createTypeDef(typeDefinition string) string{
 	if !isComplexType(typeDefinition) {
 		return typeDefinition
 	} else {
+		prefix := c.source.Name.Name + package_separator
+	
 		for _, typedef := range c.ccode.typedefs {
 			if typedef.ccode == typeDefinition {
-				return typedef.name
+				return prefix + typedef.name
 			}
 		}
+		
 		typeName := c.createIdent()
 		typedef := TypeDef{name: typeName, ccode : typeDefinition}
 		c.ccode.typedefs = append( c.ccode.typedefs, typedef)
-		return typedef.name
+		return prefix + typedef.name
 	}
 	
 }

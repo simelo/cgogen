@@ -187,11 +187,11 @@ func main() {
 	}
 	
 	if cfg.FullTranspile {
-		compiler := NewCompiler(fast)	
+		compiler := NewCompiler()	
 		compiler.includes = append(compiler.includes, "cgoutils.h")
-		compiler.Compile()
+		compiler.Compile(fast)
 		if cfg.OutputFileCH != "" {
-			saveTextToFile(cfg.OutputFileCH, compiler.GetHeaderCode())
+			saveTextToFile(cfg.OutputFileCH, compiler.GetHeaderCode(true))
 		}
 	}
 	
