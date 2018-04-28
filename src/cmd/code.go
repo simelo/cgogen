@@ -14,3 +14,7 @@ func (f *Function) createSignature() string {
 	signature += ")"
 	return signature
 }
+
+func (c *CCompiler) GetCCode() (code string) {
+	return
+}

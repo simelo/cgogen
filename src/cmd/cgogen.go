@@ -28,6 +28,8 @@ type Config struct {
 	FuncDependencyFile	string
 	IgnoreDependants	bool
 	FullTranspile		bool //Full conversion to c code
+	FullTranspileDir	string
+	FullTranspileOut	string
 }
 
 func (c *Config) register() {
@@ -44,6 +46,8 @@ func (c *Config) register() {
 	flag.StringVar(&c.TypeDependencyFile, "td", "", "PATH to destination file where dependant types will be stored")
 	flag.StringVar(&c.FuncDependencyFile, "fd", "", "PATH to destination file where dependant functions will be stored")
 	flag.BoolVar(&c.IgnoreDependants, "id", false, "Ignore dependants")
+	flag.StringVar(&c.FullTranspileDir, "transdir", "", "Directory to get source code for full transpile")
+	flag.StringVar(&c.FullTranspileOut, "transout", "", "Directory to put c files of full transpile")
 }
 
 var (
@@ -135,6 +139,14 @@ func main() {
 		applog = log.Printf
 	}
 	
+	if cfg.FullTranspile {
+		doFullTranspile()
+	} else {
+		doGoFile()
+	}
+}
+
+func doGoFile(){
 	var dependant_functions []string
 	var dependant_types []string
 	if cfg.ProcessDependencies {
@@ -186,14 +198,6 @@ func main() {
 		}
 	}
 	
-	if cfg.FullTranspile {
-		compiler := NewCompiler()	
-		compiler.includes = append(compiler.includes, "cgoutils.h")
-		compiler.Compile(fast)
-		if cfg.OutputFileCH != "" {
-			saveTextToFile(cfg.OutputFileCH, compiler.GetHeaderCode(true))
-		}
-	}
 	
 	for _, _decl := range fast.Decls {
 	
@@ -255,6 +259,24 @@ func main() {
 	if cfg.OutputFileGO != "" {
 		fixExportComment(cfg.OutputFileGO)
 	}
+}
+
+func doFullTranspile(){
+	if cfg.FullTranspileDir == "" {
+		fmt.Println("Must specify full transpile source directory")
+		return
+	}
+	if cfg.FullTranspileOut == "" {
+		fmt.Println("Must specify full transpile destination directory")
+		return
+	}
+	FullTranspile(cfg.FullTranspileDir, cfg.FullTranspileOut)
+	/*compiler := NewCompiler()	
+	compiler.includes = append(compiler.includes, "cgoutils.h")
+	compiler.Compile(fast)
+	if cfg.OutputFileCH != "" {
+		saveTextToFile(cfg.OutputFileCH, compiler.GetHeaderCode())
+	}*/
 }
 
 func saveTextToFile(fileName string, text string){

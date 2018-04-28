@@ -61,13 +61,11 @@ func NewCompiler() (compiler *CCompiler) {
 	return
 }
 
-func (c *CCompiler) GetHeaderCode(addIncludes bool) (header string) {
+func (c *CCompiler) GetHeaderCode() (header string) {
 	header = ""
-	if addIncludes {
-		header += "#pragma once\n"
-		for _, include := range c.includes {
-			header += fmt.Sprintf("#include \"%s\"\n", include)
-		}
+	header += "#pragma once\n"
+	for _, include := range c.includes {
+		header += fmt.Sprintf("#include \"%s\"\n", include)
 	}
 	
 	header += "\n\n"
