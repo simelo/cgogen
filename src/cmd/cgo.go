@@ -20,6 +20,7 @@ type CCode struct {
 	typedefs 		[]TypeDef
 	constdefs		[]ConstDef
 	forwards		[]string
+	functions		[]Function
 }
 
 type ConstDef struct{
@@ -34,6 +35,18 @@ type TypeDef struct {
 	dependencies 	[]string
 	defType			string // struct, map, whatever this typedef represents
 						   // used for forwards	
+}
+
+type Function struct{
+	name 		string
+	signature	string
+	body		string
+}
+
+type Parameter struct {
+	name 		string
+	ccode 		string
+	ctype		string
 }
 
 func NewCompiler() (compiler *CCompiler) {
@@ -70,6 +83,12 @@ func (c *CCompiler) GetHeaderCode(addIncludes bool) (header string) {
 		header += "typedef " + typedef.ccode + " " + prefix + typedef.name + 
 			typedef.suffix + ";\n"
 	}
+	
+	header += "\n\n"
+	for _, funcDef := range c.ccode.functions {
+		header += funcDef.signature + ";\n"
+	}
+	
 	return
 }
 
@@ -285,7 +304,6 @@ func (c *CCompiler) processArray(arrayExpr *ast.ArrayType) (string, bool, string
 			arrayElemCode = c.createTypeDef(arrayElemCode)
 			return fmt.Sprintf("GoSlice_(%s) ", arrayElemCode), true, ""
 		} else {
-			arrayElemCode = c.createTypeDef(arrayElemCode)
 			return arrayElemCode, true, fmt.Sprintf("%s[%s]", suffix, arrayLenCode)
 		}
 	}
@@ -377,7 +395,79 @@ func (c *CCompiler) createTypeDef(typeDefinition string) string{
 	
 }
 
-func (c *CCompiler) processFunction(decl *ast.FuncDecl){
+func (c *CCompiler) processFunction(fdecl *ast.FuncDecl){
+	prefix := c.source.Name.Name + package_separator
+	funcName := fdecl.Name.Name
+	receiver := c.getFuncReceiverParam(fdecl)
+	var parameters []Parameter
+	if receiver != nil {
+		parameters = append( parameters, *receiver )
+		recType := receiver.ctype
+		if strings.HasSuffix(recType, "*"){
+			recType = recType[:len(recType)-1]
+		}
+		funcName = recType + "_" + funcName
+	}
+	funcName = prefix + funcName
+	f := Function{name: funcName}
+	parameters = append( parameters, c.getFuncParams(fdecl)... )
+	f.signature = "void " + funcName + "("
+	var paramsCode []string
+	for _, p := range parameters {
+		paramsCode = append( paramsCode, p.ccode )
+	}
+	f.signature += strings.Join( paramsCode, ", " )
+	f.signature += ")"
+	c.ccode.functions = append( c.ccode.functions, f )
+}
+
+func (c* CCompiler) getFuncReceiverParam(fdecl *ast.FuncDecl) *Parameter {
+	if receiver := fdecl.Recv; receiver != nil {
+		_type := &receiver.List[0].Type
+		typeName := ""
+		if starExpr, _isPointerRecv := (*_type).(*ast.StarExpr); _isPointerRecv {
+			_type = &starExpr.X
+			typeName = "*"
+		}
+		if identExpr, isIdent := (*_type).(*ast.Ident); isIdent {
+			typeName = identExpr.Name + typeName
+		}
+		recvParamName := ""
+		if len(receiver.List[0].Names) > 0 {
+			recvParamName = receiver.List[0].Names[0].Name
+		} else {
+			recvParamName = c.createIdent()
+		}
+		prefix := c.source.Name.Name + package_separator
+		ccode := prefix + typeName + " " + recvParamName
+		p := Parameter{name : recvParamName, ccode : ccode, ctype : typeName}
+		return &p
+	}
+	return nil
+}
+
+func (c *CCompiler) getFuncParams(fdecl *ast.FuncDecl) (parameters []Parameter){
+	for index, param := range fdecl.Type.Params.List {
+		typeCode, ok, suffix := c.processTypeExpression( param.Type )
+		if ok {
+			var names []string
+			for _, name := range param.Names {
+				names = append( names, name.Name )
+			}
+			if len(names) == 0 {
+				names = append( names, c.createIdent() )
+			}
+			for _, name := range names {
+				p := Parameter{name : name}
+				p.ccode = typeCode + " " + name + suffix
+				p.ctype = typeCode + suffix
+				parameters = append( parameters, p)
+			}
+		} else {
+			applog("Couldn't process parameter %d in function %s", index, fdecl.Name.Name)
+		}
+	}
+	return
 }
 
 /* Returns the corresponding C type for a GO type*/
