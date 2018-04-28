@@ -370,9 +370,9 @@ func (c *CCompiler) processStructType(typeStruct *ast.StructType) (string, bool)
 	return c_code, true
 }
 
-func (c *CCompiler) createIdent() string{
+func (c *CCompiler) createIdent(prefix string) string{
 	c.identsCount++
-	return fmt.Sprintf("_identId%d", c.identsCount)
+	return fmt.Sprintf("%s%d", prefix, c.identsCount)
 }
 
 func (c *CCompiler) createTypeDef(typeDefinition string) string{
@@ -387,7 +387,7 @@ func (c *CCompiler) createTypeDef(typeDefinition string) string{
 			}
 		}
 		
-		typeName := c.createIdent()
+		typeName := c.createIdent("_typeIdent")
 		typedef := TypeDef{name: typeName, ccode : typeDefinition}
 		c.ccode.typedefs = append( c.ccode.typedefs, typedef)
 		return prefix + typedef.name
@@ -411,7 +411,8 @@ func (c *CCompiler) processFunction(fdecl *ast.FuncDecl){
 	funcName = prefix + funcName
 	f := Function{name: funcName}
 	parameters = append( parameters, c.getFuncParams(fdecl)... )
-	f.signature = "void " + funcName + "("
+	resultType := c.getFuncResultType(fdecl)
+	f.signature = resultType + " " + funcName + "("
 	var paramsCode []string
 	for _, p := range parameters {
 		paramsCode = append( paramsCode, p.ccode )
@@ -436,7 +437,7 @@ func (c* CCompiler) getFuncReceiverParam(fdecl *ast.FuncDecl) *Parameter {
 		if len(receiver.List[0].Names) > 0 {
 			recvParamName = receiver.List[0].Names[0].Name
 		} else {
-			recvParamName = c.createIdent()
+			recvParamName = c.createIdent("_recv")
 		}
 		prefix := c.source.Name.Name + package_separator
 		ccode := prefix + typeName + " " + recvParamName
@@ -450,12 +451,16 @@ func (c *CCompiler) getFuncParams(fdecl *ast.FuncDecl) (parameters []Parameter){
 	for index, param := range fdecl.Type.Params.List {
 		typeCode, ok, suffix := c.processTypeExpression( param.Type )
 		if ok {
+			if isComplexTypeForArgument(typeCode){
+				typeCode = c.createTypeDef(typeCode + suffix)
+				suffix = ""
+			}
 			var names []string
 			for _, name := range param.Names {
 				names = append( names, name.Name )
 			}
 			if len(names) == 0 {
-				names = append( names, c.createIdent() )
+				names = append( names, c.createIdent("_param") )
 			}
 			for _, name := range names {
 				p := Parameter{name : name}
@@ -468,6 +473,52 @@ func (c *CCompiler) getFuncParams(fdecl *ast.FuncDecl) (parameters []Parameter){
 		}
 	}
 	return
+}
+
+func (c *CCompiler) getFuncResultType(fdecl *ast.FuncDecl) (r string) {
+	var typeCode string
+	var suffix string
+	var parameters []Parameter
+	var ok bool
+	if fdecl.Type.Results != nil {
+		for index, param := range fdecl.Type.Results.List {
+			typeCode, ok, suffix = c.processTypeExpression( param.Type )
+			if ok {
+				if isComplexTypeForArgument(typeCode){
+					typeCode = c.createTypeDef(typeCode + suffix)
+					suffix = ""
+				}
+				var names []string
+				for _, name := range param.Names {
+					names = append( names, name.Name )
+				}
+				if len(names) == 0 {
+					names = append( names, c.createIdent("_result") )
+				}
+				for _, name := range names {
+					p := Parameter{name : name}
+					p.ccode = typeCode + " " + name + suffix
+					p.ctype = typeCode + suffix
+					parameters = append( parameters, p)
+				}
+			} else {
+				applog("Couldn't process return parameter %d in function %s", index, fdecl.Name.Name)
+			}
+		}
+	}
+	if len(parameters) == 0 {
+		r = "void"
+	} else if len(parameters) == 1{
+		r = typeCode + suffix
+	} else {
+		r = "struct{\n"
+		for _, p := range parameters {
+			r += p.ccode + ";\n"
+		}
+		r += "}\n"
+		r = c.createTypeDef(r)
+	}
+	return 
 }
 
 /* Returns the corresponding C type for a GO type*/
@@ -495,6 +546,11 @@ func isComplexType(typeDefinition string) bool{
 	return strings.Index(typeDefinition, "*") >= 0 || 
 		strings.Index(typeDefinition, "{") >= 0 ||
 		strings.Index(typeDefinition, "[") >= 0 ||
+		strings.Index(typeDefinition, "(") >= 0 
+}
+
+func isComplexTypeForArgument(typeDefinition string) bool{
+	return strings.Index(typeDefinition, "{") >= 0 ||
 		strings.Index(typeDefinition, "(") >= 0 
 }
 
