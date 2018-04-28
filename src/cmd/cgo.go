@@ -20,7 +20,7 @@ type CCode struct {
 	typedefs 		[]TypeDef
 	constdefs		[]ConstDef
 	forwards		[]string
-	functions		[]Function
+	functions		map[string]Function
 }
 
 type ConstDef struct{
@@ -29,6 +29,8 @@ type ConstDef struct{
 }
 
 type TypeDef struct {
+	originalName	string
+	packageName		string
 	name 			string
 	ccode 			string
 	suffix 			string
@@ -38,9 +40,12 @@ type TypeDef struct {
 }
 
 type Function struct{
+	originalName	string
+	packageName		string
 	name 		string
-	signature	string
 	body		string
+	parameters  []Parameter
+	returnType	string
 }
 
 type Parameter struct {
@@ -52,6 +57,7 @@ type Parameter struct {
 func NewCompiler() (compiler *CCompiler) {
 	compiler = &CCompiler{}
 	compiler.ccode = &CCode{}
+	compiler.ccode.functions = make(map[string]Function)
 	return
 }
 
@@ -86,7 +92,7 @@ func (c *CCompiler) GetHeaderCode(addIncludes bool) (header string) {
 	
 	header += "\n\n"
 	for _, funcDef := range c.ccode.functions {
-		header += funcDef.signature + ";\n"
+		header += funcDef.createSignature() + ";\n"
 	}
 	
 	return
@@ -199,7 +205,10 @@ func (c *CCompiler) processImport(decl *ast.GenDecl){
 func (c *CCompiler) processType(tdecl *ast.GenDecl){
 	for _, s := range tdecl.Specs{
 		if typeSpec, isTypeSpec := (s).(*ast.TypeSpec); isTypeSpec {
-			typedef := TypeDef{name:typeSpec.Name.Name}
+			typedef := TypeDef{
+				name:typeSpec.Name.Name, 
+				originalName : typeSpec.Name.Name,
+				packageName : c.source.Name.Name}
 			typedef.defType = ""
 			c.currentType = &typedef
 			typeName := typeSpec.Name.Name
@@ -409,17 +418,14 @@ func (c *CCompiler) processFunction(fdecl *ast.FuncDecl){
 		funcName = recType + "_" + funcName
 	}
 	funcName = prefix + funcName
-	f := Function{name: funcName}
+	f := Function{name: funcName, 
+				originalName : fdecl.Name.Name, 
+				packageName : c.source.Name.Name}
 	parameters = append( parameters, c.getFuncParams(fdecl)... )
 	resultType := c.getFuncResultType(fdecl)
-	f.signature = resultType + " " + funcName + "("
-	var paramsCode []string
-	for _, p := range parameters {
-		paramsCode = append( paramsCode, p.ccode )
-	}
-	f.signature += strings.Join( paramsCode, ", " )
-	f.signature += ")"
-	c.ccode.functions = append( c.ccode.functions, f )
+	f.parameters = parameters
+	f.returnType = resultType
+	c.ccode.functions[f.packageName + "." + f.originalName] = f 
 }
 
 func (c* CCompiler) getFuncReceiverParam(fdecl *ast.FuncDecl) *Parameter {
