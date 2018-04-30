@@ -144,7 +144,7 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 				}
 				if ntok {
 					code += buildTypeWithVarName( tc , sname)
-					if valueok {
+					if valueok && value != "" {
 						code += " = " + value
 					}
 					code += ";\n"

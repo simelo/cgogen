@@ -246,26 +246,6 @@ func (c *CCompiler) processVarExpression(decl *ast.GenDecl){
 }
 
 
-/*func (c *CCompiler) processConstExpression(decl *ast.GenDecl){
-	for _, s := range decl.Specs{
-		if valueSpec, isValueSpec := (s).(*ast.ValueSpec); isValueSpec {
-			for index, name := range valueSpec.Names {
-				if index < len(valueSpec.Values){
-					value := valueSpec.Values[index]
-					value_code, ok := c.processIntegerConstExpression(value, false)
-					if ok {
-						consDef := ConstDef{name: name.Name, value: value_code}
-						c.ccode.constdefs = append(c.ccode.constdefs, consDef)
-					} else {
-						//Deal this const in implementation
-					}
-				}
-			}
-		} else {
-			applog("Don't know what to do with this const expression")
-		}
-	}
-}*/
 
 func (c *CCompiler) processUnknown(decl ast.Decl){
 	s := reflect.ValueOf(decl).Elem()
@@ -332,6 +312,11 @@ func (c *CCompiler) processMap(mapExpr *ast.MapType) (string, bool) {
 		return fmt.Sprintf("GoMap_(%s,%s)", mapKeyCode, mapValueCode), true
 	}
 	return "", false
+}
+
+func getMapTypeKeyword(typeName string) string{
+	
+	return typeName
 }
 
 func (c *CCompiler) processIntegerConstExpression(expr ast.Expr, isForArray bool) (string, bool) {

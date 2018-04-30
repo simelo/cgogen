@@ -23,11 +23,32 @@ func (c *CCompiler) generateExpression(expr ast.Expr) (code string, resultType s
 		return c.generateIdentExpr(*identExpr)
 	} else if callExpr, isCallExpr := (expr).(*ast.CallExpr); isCallExpr {
 		return c.generateCallExpr(*callExpr)
+	} else if compLit, isCompLit := (expr).(*ast.CompositeLit); isCompLit {
+		return c.generateCompositeLiteral(*compLit)
+	} else if keyValue, isKeyValue := (expr).(*ast.KeyValueExpr); isKeyValue {
+		return c.generateKeyValueExpression(*keyValue)
 	} else {
 		ok = false									
 		x := reflect.ValueOf(expr).Elem()
 		typeOfT := x.Type()
 		reportError("Don't know what to do with expression: %s", typeOfT)
+	}
+	return
+}
+
+func (c *CCompiler) generateKeyValueExpression(keyValue ast.KeyValueExpr) (code string, resultType string, ok bool){
+	key := keyValue.Key
+	if identExpr, isIdent := (key).(*ast.Ident); isIdent {
+		value, typeValue, okValue := c.generateExpression(keyValue.Value)
+		if okValue {
+			code = fmt.Sprintf("{%s : %s}", identExpr.Name, value)
+			ok = true
+			resultType = typeValue //resultType should be KeyValue
+		} else {
+			reportError("Error generating value in key value expression")
+		}
+	} else {
+		reportError("Not dealing with maps yet")
 	}
 	return
 }
@@ -88,7 +109,6 @@ func  (c *CCompiler) generateLiteral(litExpr ast.BasicLit) (code string, resultT
 
 func (c *CCompiler) generateCallExpr(callExpr ast.CallExpr) (code string, resultType string, ok bool){
 	funcCode, funcType, okFunc := c.generateExpression(callExpr.Fun)
-	//Ignore func type for now
 	if okFunc {
 		var argsCode []string
 		ok = true
@@ -106,6 +126,31 @@ func (c *CCompiler) generateCallExpr(callExpr ast.CallExpr) (code string, result
 	} else {
 		reportError("Couldn't generate call expression")
 	}
+	return
+}
+
+func (c *CCompiler) generateCompositeLiteral(compLit ast.CompositeLit) (code string, resultType string, ok bool) {
+	typeExpr := ""
+	okType := false
+	if compLit.Type != nil {
+		typeExpr, okType = c.processTypeExpression(compLit.Type)
+	}
+	var initializers []string
+	for _, expr := range compLit.Elts {
+		codeExpr, typeExprValue, okExpr := c.generateExpression(expr)
+		if okExpr {
+			if !okType {
+				okType = true
+				typeExpr = typeExprValue
+			}
+			initializers = append( initializers, codeExpr )
+		} else {
+			reportError("Couldn't generate initializer")
+		}
+	}
+	code = fmt.Sprintf("{%s}", strings.Join(initializers, ","))
+	resultType = typeExpr
+	ok = okType
 	return
 }
 
