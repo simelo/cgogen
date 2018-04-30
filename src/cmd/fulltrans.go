@@ -18,7 +18,7 @@ func FullTranspile(sourcedir string, outdir string){
 		fo, err := os.Open(file)
 		applog("opening %s", file)
 		if err != nil {
-			applog("error: %v", err)
+			reportError("error: %v", err)
 			return err
 		}
 		defer fo.Close()
@@ -33,7 +33,7 @@ func FullTranspile(sourcedir string, outdir string){
 			}
 			compiler.Compile(fast)
 		} else {
-			applog("error: %v", err)
+			reportError("error: %v", err)
 		}
 		return nil
 	})

@@ -137,7 +137,7 @@ func (c *CCompiler) popStack() {
 	if len( c.defStack ) > 0 {
 		c.defStack = c.defStack[:len(c.defStack)-1]
 	} else {
-		applog("Poping empty stack")
+		reportError("Poping empty stack")
 	}
 }
 
@@ -145,7 +145,7 @@ func (c *CCompiler) getTopOfStack() *CCode {
 	if len( c.defStack ) > 0 {
 		return c.defStack[len(c.defStack)-1]
 	} else {
-		applog("Poping empty stack")
+		reportError("Poping empty stack")
 		return nil
 	}
 }
@@ -270,7 +270,7 @@ func (c *CCompiler) processVarExpression(decl *ast.GenDecl){
 func (c *CCompiler) processUnknown(decl ast.Decl){
 	s := reflect.ValueOf(decl).Elem()
 	typeOfT := s.Type()
-	applog("Don't know what to do with: %s", typeOfT)
+	reportError("Don't know what to do with: %s", typeOfT)
 }
 
 func (c *CCompiler) processImport(decl *ast.GenDecl){
@@ -318,7 +318,7 @@ func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (code string, resu
 	} else {
 		x := reflect.ValueOf(type_expr).Elem()
 		typeOfT := x.Type()
-		applog("Unknown type: %s", typeOfT)
+		reportError("Unknown type: %s", typeOfT)
 	}
 	return
 }
@@ -340,7 +340,7 @@ func (c *CCompiler) processIntegerConstExpression(expr ast.Expr, isForArray bool
 			return litExpr.Value, true
 		} else {
 			if isForArray {
-				applog("Array length must be integer")
+				reportError("Array length must be integer")
 			}
 			return "", false
 		}
@@ -366,13 +366,13 @@ func (c *CCompiler) processIntegerConstExpression(expr ast.Expr, isForArray bool
 			return identExpr.Name + package_separator + selectorExpr.Sel.Name, true
 		} else {
 			if isForArray {
-				applog("Selector with complex expression in array length")
+				reportError("Selector with complex expression in array length")
 			}
 			return "", false
 		}
 	} else {
 		if isForArray {
-			applog("Can't deal with this array len type %s", getTypeOfVar(expr))
+			reportError("Can't deal with this array len type %s", getTypeOfVar(expr))
 		}
 	}
 	return "", false
@@ -387,13 +387,13 @@ func (c *CCompiler) processArray(arrayExpr *ast.ArrayType) (string, bool) {
 	} else {
 		arrayLenCode, ok = c.processIntegerConstExpression(arrayExpr.Len, true)
 		if !ok {
-			applog("Couldn't process array length expression")
+			reportError("Couldn't process array length expression")
 		}
 	}
 	if ok {
 		arrayElemCode, ok = c.processTypeExpression(arrayExpr.Elt)
 	} else {
-		applog("Couldn't process array length expression")
+		reportError("Couldn't process array length expression")
 	}
 	if ok {
 		if arrayExpr.Len == nil {
@@ -422,7 +422,7 @@ func (c *CCompiler) processSelector(selectorExpr *ast.SelectorExpr) (string, boo
 	if isIdent {
 		return identExpr.Name + package_separator + selectorExpr.Sel.Name, true
 	} else {
-		applog("Selector with complex expression")
+		reportError("Selector with complex expression")
 		return "", false
 	}
 }
@@ -456,7 +456,7 @@ func (c *CCompiler) processStructType(typeStruct *ast.StructType) (string, bool)
 			if ok {
 				c_code += buildTypeWithVarName( code , fieldName) + ";\n"
 			} else {
-				applog("Couldn't process %s", field.Type)
+				reportError("Couldn't process %s", field.Type)
 			}
 		}
 	}
@@ -499,7 +499,7 @@ func (c *CCompiler) processFunctionBody(fdecl *ast.FuncDecl){
 	if found {
 		function.body = c.generateBody(function, fdecl.Body)
 	} else {
-		applog("Function name %s.%s not found to generate body", packageName, funcName)
+		reportError("Function name %s.%s not found to generate body", packageName, funcName)
 	}
 }
 
@@ -573,7 +573,7 @@ func (c *CCompiler) getFuncParams(fdecl *ast.FuncDecl) (parameters []Parameter){
 				parameters = append( parameters, p)
 			}
 		} else {
-			applog("Couldn't process parameter %d in function %s", index + 1, fdecl.Name.Name)
+			reportError("Couldn't process parameter %d in function %s", index + 1, fdecl.Name.Name)
 		}
 	}
 	return
@@ -604,7 +604,7 @@ func (c *CCompiler) getFuncResultType(fdecl *ast.FuncDecl) (r string) {
 					parameters = append( parameters, p)
 				}
 			} else {
-				applog("Couldn't process return parameter %d in function %s", index, fdecl.Name.Name)
+				reportError("Couldn't process return parameter %d in function %s", index, fdecl.Name.Name)
 			}
 		}
 	}

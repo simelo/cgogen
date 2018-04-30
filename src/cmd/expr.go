@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"strings"
+	"strings"
 	"go/ast"
 	"go/token"
 	"fmt"
@@ -27,7 +27,7 @@ func (c *CCompiler) generateExpression(expr ast.Expr) (code string, resultType s
 		ok = false									
 		x := reflect.ValueOf(expr).Elem()
 		typeOfT := x.Type()
-		applog("Don't know what to do with expression: %s", typeOfT)
+		reportError("Don't know what to do with expression: %s", typeOfT)
 	}
 	return
 }
@@ -44,10 +44,10 @@ func  (c *CCompiler) generateIdentExpr(identExpr ast.Ident) (code string, result
 		ok = true
 	} else if funcDef := c.findFunction(identExpr.Name, ""); funcDef != nil {
 		code = identExpr.Name
-		resultType = ""
+		resultType = funcDef.returnType //Return type should be function
 		ok = true
 	} else {
-		applog("Identifier not found %s", identExpr.Name)
+		reportError("Identifier not found %s", identExpr.Name)
 	}
 	return
 }
@@ -60,7 +60,7 @@ func  (c *CCompiler) generateBinary(binExpr ast.BinaryExpr) (code string, result
 		if ok {
 			code = fmt.Sprintf("%s %s %s", leftExpr, binExpr.Op, rightExpr)
 		} else {
-			applog("Applying operand %s to different types %s and %s", 
+			reportError("Applying operand %s to different types %s and %s", 
 				binExpr.Op, leftType, rightType)
 		}
 	}
@@ -72,7 +72,7 @@ func  (c *CCompiler) generateLiteral(litExpr ast.BasicLit) (code string, resultT
 	code = litExpr.Value
 	switch litExpr.Kind {
 	default:
-		applog("Unknown literal %s", litExpr.Kind)
+		reportError("Unknown literal %s", litExpr.Kind)
 		ok = false
 	case token.INT:
 		resultType = "GoInt32_"	
@@ -87,11 +87,24 @@ func  (c *CCompiler) generateLiteral(litExpr ast.BasicLit) (code string, resultT
 }
 
 func (c *CCompiler) generateCallExpr(callExpr ast.CallExpr) (code string, resultType string, ok bool){
-	_, _, okFunc := c.generateExpression(callExpr.Fun)
+	funcCode, funcType, okFunc := c.generateExpression(callExpr.Fun)
 	//Ignore func type for now
 	if okFunc {
-		/*for _, arg := range callExpr.Args {
-		}*/
+		var argsCode []string
+		ok = true
+		for index, arg := range callExpr.Args {
+			argCode, _, okArg := c.generateExpression( arg )
+			if okArg {
+				argsCode = append( argsCode, argCode )
+			} else {
+				ok = false
+				reportError("Couldn't generate argument %d expression", index + 1)
+			}
+		}
+		code = fmt.Sprintf("%s( %s )", funcCode, strings.Join(argsCode, ", "))
+		resultType = funcType
+	} else {
+		reportError("Couldn't generate call expression")
 	}
 	return
 }

@@ -42,7 +42,7 @@ func (c *CCompiler) generateStatement(stmt ast.Stmt) (code string) {
 	} else {
 		s := reflect.ValueOf(stmt).Elem()
 		typeOfT := s.Type()
-		applog("Don't know what to do with: %s", typeOfT)
+		reportError("Don't know what to do with: %s", typeOfT)
 	}
 	return
 }
@@ -107,7 +107,7 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) ( code string ) {
 		} else {
 			x := reflect.ValueOf(s).Elem()
 			typeOfT := x.Type()
-			applog("Don't know what to do with: %s", typeOfT)
+			reportError("Don't know what to do with: %s", typeOfT)
 		}
 	}
 	return code
@@ -157,7 +157,7 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 		} else {
 			x := reflect.ValueOf(s).Elem()
 			typeOfT := x.Type()
-			applog("Don't know what to do with: %s", typeOfT)
+			reportError("Don't know what to do with: %s", typeOfT)
 		}
 	}
 	return code
