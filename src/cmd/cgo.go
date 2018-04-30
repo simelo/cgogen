@@ -98,11 +98,11 @@ func (c *CCompiler) GetHeaderCode() (header string) {
 	
 	header += "\n\n"
 	
-	prefix := c.source.Name.Name + package_separator
+	//prefix := c.source.Name.Name + package_separator
 	for _, typedef := range c.ccode.typedefs {
-		
 		header += "typedef " + 
-			buildTypeWithVarName(typedef.ccode, prefix + typedef.name ) + ";\n"
+			buildTypeWithVarName( typedef.ccode , 
+				c.source.Name.Name + package_separator + typedef.name) + ";\n"
 	}
 	
 	header += "\n\n"
@@ -245,8 +245,6 @@ func (c *CCompiler) processVarExpression(decl *ast.GenDecl){
 	c.generateDeclaration(*decl)
 }
 
-
-
 func (c *CCompiler) processUnknown(decl ast.Decl){
 	s := reflect.ValueOf(decl).Elem()
 	typeOfT := s.Type()
@@ -270,7 +268,7 @@ func (c *CCompiler) processType(tdecl *ast.GenDecl){
 			code, ok := c.processTypeExpression( typeSpec.Type)
 			if ok {
 				typedef.name = typeName
-				typedef.ccode = buildTypeWithVarName( code, typeName )
+				typedef.ccode =  code
 				c.ccode.typedefs = append( c.ccode.typedefs, typedef) 
 			}
 			c.currentType = nil
@@ -307,16 +305,26 @@ func (c *CCompiler) processMap(mapExpr *ast.MapType) (string, bool) {
 	mapKeyCode, okKey := c.processTypeExpression(mapExpr.Key)
 	mapValueCode, okMap := c.processTypeExpression(mapExpr.Value)
 	if okKey && okMap {
-		mapKeyCode = c.createTypeDef(  mapKeyCode )
-		mapValueCode = c.createTypeDef(  mapValueCode )
-		return fmt.Sprintf("GoMap_(%s,%s)", mapKeyCode, mapValueCode), true
+		mapKeyCode = getMapTypeKeyword(  mapKeyCode )
+		mapValueCode = getMapTypeKeyword(  mapValueCode )
+		return fmt.Sprintf("Go%s%sMap", mapKeyCode, mapValueCode), true
 	}
 	return "", false
 }
 
 func getMapTypeKeyword(typeName string) string{
-	
-	return typeName
+	if typeName == "GoInt_" || typeName == "GoUint_" || 
+		typeName == "GoInt16_" || typeName == "GoUint16_" ||
+		typeName == "GoInt32_" || typeName == "GoUint32_" ||
+		typeName == "GoInt64_" || typeName == "GoUint64_" {
+		return "Int"
+	} else if typeName == "GoFloat32_" || typeName == "GoFloat64_" {
+		return "Float"
+	} else if typeName == "GoString_" {
+		return "String"
+	} else {
+		return "Object"
+	}
 }
 
 func (c *CCompiler) processIntegerConstExpression(expr ast.Expr, isForArray bool) (string, bool) {

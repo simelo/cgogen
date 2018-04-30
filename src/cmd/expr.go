@@ -37,18 +37,31 @@ func (c *CCompiler) generateExpression(expr ast.Expr) (code string, resultType s
 }
 
 func (c *CCompiler) generateKeyValueExpression(keyValue ast.KeyValueExpr) (code string, resultType string, ok bool){
-	key := keyValue.Key
-	if identExpr, isIdent := (key).(*ast.Ident); isIdent {
+	if identExpr, isIdent := (keyValue.Key).(*ast.Ident); isIdent {
 		value, typeValue, okValue := c.generateExpression(keyValue.Value)
 		if okValue {
-			code = fmt.Sprintf("{%s : %s}", identExpr.Name, value)
+			code = fmt.Sprintf("%s : %s", identExpr.Name, value)
 			ok = true
 			resultType = typeValue //resultType should be KeyValue
 		} else {
 			reportError("Error generating value in key value expression")
 		}
 	} else {
-		reportError("Not dealing with maps yet")
+		key, typeKey, okKey := c.generateExpression(keyValue.Key)
+		value, typeValue, okValue := c.generateExpression(keyValue.Value)
+		if !okKey {
+			reportError("Couldn't generate map key expression")
+		}
+		if !okValue {
+			reportError("Couldn't generate map value expression")
+		}
+		if okKey && okValue {
+			mapKeyCode := getMapTypeKeyword(  typeKey )
+			mapValueCode := getMapTypeKeyword(  typeValue )
+			init := fmt.Sprintf("Map%s%sKeyValue", mapKeyCode, mapValueCode)
+			code = fmt.Sprintf("%s(%s,%s)", init, key, value)
+			ok = true
+		} 
 	}
 	return
 }
@@ -79,7 +92,11 @@ func  (c *CCompiler) generateBinary(binExpr ast.BinaryExpr) (code string, result
 	if okLeft && okRight {
 		resultType, ok = mixTypes(leftType, rightType)
 		if ok {
-			code = fmt.Sprintf("%s %s %s", leftExpr, binExpr.Op, rightExpr)
+			if binExpr.Op == token.ADD && leftType == "GoString_" && rightType == "GoString_" {
+				code = fmt.Sprintf("string_concat(%s, %s)", leftExpr, rightExpr)
+			} else {
+				code = fmt.Sprintf("%s %s %s", leftExpr, binExpr.Op, rightExpr)
+			}
 		} else {
 			reportError("Applying operand %s to different types %s and %s", 
 				binExpr.Op, leftType, rightType)
@@ -102,6 +119,7 @@ func  (c *CCompiler) generateLiteral(litExpr ast.BasicLit) (code string, resultT
 	case token.CHAR:
 		resultType = "GoUint32_"
 	case token.STRING:
+		code = fmt.Sprintf("string_init(%s)", litExpr.Value)
 		resultType = "GoString_"
 	}
 	return
@@ -148,10 +166,18 @@ func (c *CCompiler) generateCompositeLiteral(compLit ast.CompositeLit) (code str
 			reportError("Couldn't generate initializer")
 		}
 	}
-	code = fmt.Sprintf("{%s}", strings.Join(initializers, ","))
+	code = fmt.Sprintf("%s", buildInitializerForType(typeExpr, strings.Join(initializers, ",")))
 	resultType = typeExpr
 	ok = okType
 	return
+}
+
+func buildInitializerForType(typeString string, initializer string) string{
+	if strings.HasPrefix(typeString, "Go") && strings.HasSuffix(typeString, "Map")  {
+		return fmt.Sprintf("build%s(%s)", typeString, initializer)
+	} else {
+		return fmt.Sprintf("{%s}", initializer)
+	}
 }
 
 func mixTypes(type1 string, type2 string) (string, bool) {
