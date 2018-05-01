@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"reflect"
+	"fmt"
 )
 
 func (c *CCompiler) createSignature(f *Function) string {
@@ -26,7 +27,12 @@ func (c *CCompiler) generateBlock(block *ast.BlockStmt) (code string){
 	code = "{\n"
 	c.pushStack()
 	for _, stmt := range block.List {
-		code += c.generateStatement(stmt) + "\n"
+		stmtCode := c.generateStatement(stmt) + "\n"
+		for _, init := range c.initializers {
+			code += init
+		}
+		c.initializers = nil
+		code += stmtCode
 	}
 	c.popStack()
 	code += "}\n"
@@ -61,6 +67,7 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) ( code string ) {
 	code = ""
 	for _, s := range decl.Specs{
 		if valueSpec, isValueSpec := (s).(*ast.ValueSpec); isValueSpec {
+			
 			typecode := ""
 			typeok := false
 			if valueSpec.Type != nil {
@@ -70,6 +77,7 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) ( code string ) {
 				typecode = "" 
 			}
 			for index, name := range valueSpec.Names {
+				const_code := ""
 				sname := name.Name
 				if sname == "_" {
 					sname = c.createIdent("var")
@@ -90,20 +98,22 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) ( code string ) {
 					if tc == "GoUint32_" || tc == "GoFloat32_" || 
 						tc == "GoUint64_" || 
 						tc == "GoFloat32_" || tc == "GoInt32_" ||
-						tc == "GoInt64_" {
-						code += "#define " + sname + " " + value + "\n"
+						tc == "GoInt64_" || tc == "GoString_" {
+						const_code += "#define " + sname + " " + value + "\n"
 					} else {
-						code += buildTypeWithVarName( tc , sname )
-						code += " = " + value
-						code += ";\n"
+						const_code += buildTypeWithVarName( tc , sname )
+						const_code += " = " + value
+						const_code += ";\n"
 					}
 					stack := c.getTopOfStack()
-					consDef := ConstDef{ccode: code, 
+					consDef := ConstDef{ccode: const_code, 
 							name : sname, 
 							ctype : tc}
 					stack.constdefs = append(stack.constdefs, consDef)
 				}
+				code += const_code
 			}
+			
 		} else {
 			x := reflect.ValueOf(s).Elem()
 			typeOfT := x.Type()
@@ -117,6 +127,7 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 	code = ""
 	for _, s := range decl.Specs{
 		if valueSpec, isValueSpec := (s).(*ast.ValueSpec); isValueSpec {
+			
 			typecode := ""
 			typeok := false
 			if valueSpec.Type != nil {
@@ -126,6 +137,7 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 				typecode = "" 
 			}
 			for index, name := range valueSpec.Names {
+				varcode := ""
 				sname := name.Name
 				if sname == "_" {
 					sname = c.createIdent("var")
@@ -143,17 +155,24 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 					}
 				}
 				if ntok {
-					code += buildTypeWithVarName( tc , sname)
+					varcode += buildTypeWithVarName( tc , sname)
+					initcode := ""
 					if valueok && value != "" {
-						code += " = " + value
+						varcode += " = " + value
+					} else {
+						initcode = fmt.Sprintf("memset(&%s, 0, sizeof(%s));\n",
+							sname, sname)
 					}
-					code += ";\n"
-					varDef := VarDef{ccode: code, name : sname, 
+					varcode += ";\n"
+					varcode += initcode
+					varDef := VarDef{ccode: varcode, name : sname, 
 						ctype : tc}
 					stack := c.getTopOfStack()
 					stack.vardefs = append(stack.vardefs, varDef)
 				}
+				code += varcode
 			}
+			
 		} else {
 			x := reflect.ValueOf(s).Elem()
 			typeOfT := x.Type()

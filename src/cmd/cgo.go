@@ -16,6 +16,7 @@ type CCompiler struct{
 	identsCount		int
 	defStack		[]*CCode
 	imports			map[string]*CCode
+	initializers	[]string
 }
 
 type CCode struct {
@@ -302,12 +303,12 @@ func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (code string, resu
 }
 
 func (c *CCompiler) processMap(mapExpr *ast.MapType) (string, bool) {
-	mapKeyCode, okKey := c.processTypeExpression(mapExpr.Key)
+	_, okKey := c.processTypeExpression(mapExpr.Key)
 	mapValueCode, okMap := c.processTypeExpression(mapExpr.Value)
 	if okKey && okMap {
-		mapKeyCode = getMapTypeKeyword(  mapKeyCode )
+		//mapKeyCode = getMapTypeKeyword(  mapKeyCode )
 		mapValueCode = getMapTypeKeyword(  mapValueCode )
-		return fmt.Sprintf("Go%s%sMap", mapKeyCode, mapValueCode), true
+		return fmt.Sprintf("Go%sMap", mapValueCode), true
 	}
 	return "", false
 }

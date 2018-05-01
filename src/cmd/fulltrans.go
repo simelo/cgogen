@@ -44,6 +44,7 @@ func generateCode(compilers map[string]*CCompiler, outdir string){
 	cleanDir(outdir)
 	for pack, compiler := range compilers{
 		headerName := pack + ".h"
+		compiler.includes = append(compiler.includes, "utils/utils.h")
 		headerCode := compiler.GetHeaderCode()
 		path := filepath.Join(outdir, headerName)
 		saveToFile( path, headerCode )
