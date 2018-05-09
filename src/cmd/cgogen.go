@@ -262,7 +262,7 @@ func doGoFile(){
 }
 
 func doFullTranspile(){
-	if cfg.FullTranspileDir == "" {
+	/*if cfg.FullTranspileDir == "" {
 		fmt.Println("Must specify full transpile source directory")
 		return
 	}
@@ -270,13 +270,7 @@ func doFullTranspile(){
 		fmt.Println("Must specify full transpile destination directory")
 		return
 	}
-	FullTranspile(cfg.FullTranspileDir, cfg.FullTranspileOut)
-	/*compiler := NewCompiler()	
-	compiler.includes = append(compiler.includes, "cgoutils.h")
-	compiler.Compile(fast)
-	if cfg.OutputFileCH != "" {
-		saveTextToFile(cfg.OutputFileCH, compiler.GetHeaderCode())
-	}*/
+	FullTranspile(cfg.FullTranspileDir, cfg.FullTranspileOut)*/
 }
 
 func saveTextToFile(fileName string, text string){
@@ -1331,3 +1325,47 @@ func processComment(comment string){
 		}
 	}
 }
+
+func IsBasicGoType(goType string) bool {
+	if _, ok := basicTypesMap[goType]; ok {
+		return true
+	} else {
+		return false
+	}
+}
+
+/* Returns the corresponding C type for a GO type*/
+func GetCTypeFromGoType(goType string) (string, bool) {
+	if val, ok := basicTypesMap[goType]; ok {
+		return val, true
+	} else {
+		return goType, false
+	}
+}
+
+func GetBasicTypes() map[string]string{
+	return basicTypesMap
+}
+
+var basicTypesMap = map[string]string{
+	  "int": "GoInt_",
+	  "uint": "GoUint_",
+	  "int8": "GoInt8_",
+	  "int16": "GoInt16_",
+	  "int32": "GoInt32_",
+	  "int64": "GoInt64_",
+	  "byte": "GoUint8_",
+	  "uint8": "GoUint8_",
+	  "uint16": "GoUint16_",
+	  "uint32": "GoUint32_",
+	  "uint64": "GoUint64_",
+	  "float32" : "GoFloat32_",
+	  "float64" : "GoFloat64_",
+	  "complex64" : "GoComplex64_",
+	  "complex128" : "GoComplex128_",
+	  "string" : "GoString_",
+	  "bool" : "bool",
+	  "error" : "GoInt32_",
+	}
+
+var package_separator = "__"

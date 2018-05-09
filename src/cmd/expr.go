@@ -174,6 +174,9 @@ func (c *CCompiler) generateCompositeLiteral(compLit ast.CompositeLit) (code str
 	okType := false
 	if compLit.Type != nil {
 		typeExpr, okType = c.processTypeExpression(compLit.Type)
+		resultType = typeExpr
+	} else {
+		resultType = "struct{}"
 	}
 	
 	if strings.HasPrefix(typeExpr, "Go") && strings.HasSuffix(typeExpr, "Map")  {
@@ -200,7 +203,6 @@ func (c *CCompiler) generateCompositeLiteral(compLit ast.CompositeLit) (code str
 		initializer := strings.Join(initializers, ",")
 		code = fmt.Sprintf("{%s}", initializer)
 	}
-	resultType = typeExpr
 	ok = okType
 	return
 }
