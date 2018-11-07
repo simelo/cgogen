@@ -1,9 +1,18 @@
+# Compiled source #
+###################
+*.class
+*.dll
+*.exe
+*.o
+*.so
 
 bin/*
 build/*
 
 *.swo
 *.swp
-*.bak
+*.txt
+*.h
+src/cmd/tests/*
 
 
