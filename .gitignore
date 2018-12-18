@@ -9,6 +9,8 @@
 bin/*
 build/*
 
+*.orig
+*.bak
 *.swo
 *.swp
 *.txt
