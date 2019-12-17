@@ -5,6 +5,7 @@ build:
 	mkdir -p ./build ./bin
 	cd ./build && go build ../src/cmd/cgogen.go
 	mv ./build/cgogen bin/cgogen
+	ln -sf bin/cgogen $(GOPATH)/bin/cgogen
 
 run:      ## Run the skycoin node. To add arguments, do 'make ARGS="--foo" run'.
 	go run src/cmd/cgogen.go ${ARGS}
