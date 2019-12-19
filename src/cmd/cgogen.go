@@ -1093,7 +1093,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		if depth == 1 {
 			new_name = package_name + package_separator + name
 		}
-		c_code += "GoInterface_ " + new_name
+		c_code += "Handle " + new_name
 		result = true
 		dependant = true
 	}else if _, isChan := (type_expr).(*ast.ChanType); isChan {
