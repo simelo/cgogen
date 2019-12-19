@@ -17,4 +17,7 @@ build/*
 *.h
 src/cmd/tests/*
 
+# Trash dolphin
+.directory
+
 
