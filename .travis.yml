@@ -1,0 +1,19 @@
+sudo: required
+language: go
+matrix:
+  include:
+    - os: linux
+      dist: xenial
+    - os: osx
+
+install:
+  # Install gox
+  - go get -t ./...
+  - make install-linters
+script:
+  - make build
+  - make lint
+
+notifications:
+  email: false
+  webhooks: https://fathomless-fjord-24024.herokuapp.com/notify
