@@ -77,7 +77,7 @@ var inplaceConvertTypes = []string{
 	"PubKeySlice", "Address", "BalanceResult",
 }
 
-var mainPackagePath = string("github.com/fibercrypto/fibercryptowallet/src/")
+var mainPackagePath = string("github.com/SkycoinProject/skycoin/src/")
 
 //var mainPackagePath = string ("")
 
