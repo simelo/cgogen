@@ -77,7 +77,7 @@ var inplaceConvertTypes = []string{
 	"PubKeySlice", "Address", "BalanceResult",
 }
 
-var mainPackagePath = string("github.com/SkycoinProject/skycoin/src/")
+var mainPackagePath = string("github.com/SkycoinProject/skycoin/src")
 
 //var mainPackagePath = string ("")
 
@@ -198,7 +198,7 @@ func doGoFile() {
 	  #include <string.h>
 	  #include <stdlib.h>
 	  
-	  #include "fctypes.h"`)
+	  #include "skytypes.h"`)
 	}
 
 	typeDefs := make([](*ast.GenDecl), 0)
@@ -682,7 +682,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		}
 	}
 
-	cfuncName := "FC_" + fast.Name.Name + "_" + funcName
+	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
 	stmt := outFile.Comment("export " + cfuncName)
 	stmt = outFile.Func().Id(cfuncName)
 	stmt = stmt.Params(params...)
@@ -798,7 +798,7 @@ func getLookupHandleCode(name string, typeName string, isPointer bool) []jen.Cod
 	lookUpName = "lookup" + handleTypes[typeName] + "Handle"
 	listVar = listVar.Id(lookUpName).Call(jen.Op("*").Id(argName(name)))
 	checkError := jen.If(jen.Op("!").Id("ok"+name)).
-		Block(jen.Id(return_var_name).Op("=").Id("FC_ERROR"), jen.Return())
+		Block(jen.Id(return_var_name).Op("=").Id("SKY_ERROR"), jen.Return())
 	if !isPointer {
 		assign := jen.Id(name).Op(":=").Op("*").Id(varname)
 		return jenCodeToArray(listVar, checkError, assign)
@@ -1089,7 +1089,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		if depth == 1 {
 			new_name = package_name + package_separator + name
 		}
-		c_code += "Handle " + new_name
+		c_code += "GoInterface_ " + new_name
 		result = true
 		dependant = true
 	} else if _, isChan := (type_expr).(*ast.ChanType); isChan {
@@ -1305,7 +1305,7 @@ func fixExportComment(filePath string) {
 	contents := buf.String()
 	f.Close()
 
-	contents = strings.Replace(contents, "// export FC_", "//export FC_", -1)
+	contents = strings.Replace(contents, "// export SKY_", "//export SKY_", -1)
 	f, err = os.Create(filePath)
 	check(err)
 	f.WriteString(contents)
