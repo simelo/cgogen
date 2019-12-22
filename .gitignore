@@ -18,3 +18,7 @@ src/cmd/tests/*
 !/.directory
 bin
 build
+.directory
+
+# IDE
+.idea
