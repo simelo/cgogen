@@ -6,9 +6,6 @@
 *.o
 *.so
 
-bin/*
-build/*
-
 *.orig
 *.bak
 *.swo
@@ -18,3 +15,6 @@ build/*
 src/cmd/tests/*
 
 
+!/.directory
+bin
+build
