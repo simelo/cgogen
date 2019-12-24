@@ -13,7 +13,6 @@ import (
 
 	"github.com/dave/jennifer/jen"
 
-	//"reflect"
 	"bytes"
 )
 
@@ -77,7 +76,7 @@ var inplaceConvertTypes = []string{
 	"PubKeySlice", "Address", "BalanceResult",
 }
 
-var mainPackagePath = string("github.com/SkycoinProject/skycoin/src")
+var mainPackagePath = string("github.com/SkycoinProject/skycoin/src/")
 
 //var mainPackagePath = string ("")
 
@@ -103,23 +102,22 @@ func dumpObject(pkg ast.Object) {
 	}
 }
 
-/*
-func dumpVar(decl ast.Decl){
-	s := reflect.ValueOf(decl).Elem()
-	typeOfT := s.Type()
-	fmt.Println(typeOfT)
-	for i := 0; i < s.NumField(); i++ {
-		f := s.Field(i)
-		fmt.Printf("Field %d: %s %s = %v\n", i,
-			typeOfT.Field(i).Name, f.Type(), f.Interface())
-	}
-	if identExpr, isIdent := (decl).(*ast.Ident); isIdent {
-		if identExpr.Obj != nil {
-			fmt.Println("ObjName: ", identExpr.Obj.Name)
-			fmt.Println("Type: ", identExpr.Obj.Type)
-		}
-	}
-}*/
+//func dumpVar(decl ast.Decl) {
+//	s := reflect.ValueOf(decl).Elem()
+//	typeOfT := s.Type()
+//	fmt.Println(typeOfT)
+//	for i := 0; i < s.NumField(); i++ {
+//		f := s.Field(i)
+//		fmt.Printf("Field %d: %s %s = %v\n", i,
+//			typeOfT.Field(i).Name, f.Type(), f.Interface())
+//	}
+//	if identExpr, isIdent := (decl).(*ast.Ident); isIdent {
+//		if identExpr.Obj != nil {
+//			fmt.Println("ObjName: ", identExpr.Obj.Name)
+//			fmt.Println("Type: ", identExpr.Obj.Type)
+//		}
+//	}
+//}
 
 var arrayTypes = []string{
 	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160",
@@ -129,14 +127,18 @@ var arrayTypes = []string{
 var importDefs [](*ast.GenDecl)
 
 //types that will be replaced by handles
-var handleTypes map[string]string
+var handleTypes = map[string]string{
+	"wallet.Wallet": "Wallet",
+	"api.WalletResponse": "WalletResponse",
+}
+
 var return_var_name = "____error_code"
 var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
 var get_package_path_from_file_name = true
 
 func main() {
-	handleTypes = make(map[string]string)
+	//handleTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
 
@@ -264,7 +266,7 @@ func doGoFile() {
 }
 
 func doFullTranspile() {
-	/*if cfg.FullTranspileDir == "" {
+	if cfg.FullTranspileDir == "" {
 		fmt.Println("Must specify full transpile source directory")
 		return
 	}
@@ -272,7 +274,7 @@ func doFullTranspile() {
 		fmt.Println("Must specify full transpile destination directory")
 		return
 	}
-	FullTranspile(cfg.FullTranspileDir, cfg.FullTranspileOut)*/
+	//FullTranspile(cfg.FullTranspileDir, cfg.FullTranspileOut)
 }
 
 func saveTextToFile(fileName string, text string) {
@@ -407,9 +409,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 			continue
 		}
 		if _, isIntf := (*_typeExpr).(*ast.InterfaceType); isIntf {
-			spec += "struct{}"
-			_typeExpr = nil
-			continue
+			return "", false
 		}
 		if _, isChan := (*_typeExpr).(*ast.ChanType); isChan {
 			// TODO: Improve func type translation
@@ -434,10 +434,10 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 			typeName := ""
 			if isIdent {
 				typeName = identExpr.Name
-				/*isDealt = isInHandleTypesList(typeName)
+				isDealt = isInHandleTypesList(typeName)
 				if isDealt {
 					spec = getHandleName(typeName)
-				} else */
+				} else
 				if isInCustomTypesList(typeName) {
 					spec = getCustomTypeName(typeName)
 					isDealt = true
@@ -447,10 +447,10 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 				identSelExpr, isSelIdent := (selExpr.X).(*ast.Ident)
 				if isSelIdent {
 					extern_package = identSelExpr.Name
-					/*isDealt = isInHandleTypesList(extern_package + "." + typeName)
+					isDealt = isInHandleTypesList(extern_package + "." + typeName)
 					if isDealt {
 						spec = getHandleName(extern_package + "." + typeName)
-					} else */
+					} else
 					if isInCustomTypesList(extern_package + "." + typeName) {
 						spec = getCustomTypeName(extern_package + "." + typeName)
 						isDealt = true
@@ -798,7 +798,7 @@ func getLookupHandleCode(name string, typeName string, isPointer bool) []jen.Cod
 	lookUpName = "lookup" + handleTypes[typeName] + "Handle"
 	listVar = listVar.Id(lookUpName).Call(jen.Op("*").Id(argName(name)))
 	checkError := jen.If(jen.Op("!").Id("ok"+name)).
-		Block(jen.Id(return_var_name).Op("=").Id("SKY_ERROR"), jen.Return())
+		Block(jen.Id(return_var_name).Op("=").Id("SKY_BAD_HANDLE"), jen.Return())
 	if !isPointer {
 		assign := jen.Id(name).Op(":=").Op("*").Id(varname)
 		return jenCodeToArray(listVar, checkError, assign)
@@ -848,8 +848,8 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 		typeName := identExpr.Name
 		if IsBasicGoType(typeName) {
 			return jenCodeToArray(leftPart.Id(argName(name)))
-			/*} else if isInHandleTypesList(typeName) {
-			return getLookupHandleCode(name, typeName, isPointer)*/
+		} else if isInHandleTypesList(typeName) {
+			return getLookupHandleCode(name, typeName, isPointer)
 		} else if isInplaceConvertType(typeName) {
 			if !isPointer {
 				leftPart = leftPart.Op("*")
@@ -1089,7 +1089,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		if depth == 1 {
 			new_name = package_name + package_separator + name
 		}
-		c_code += "GoInterface_ " + new_name
+		c_code += "Handle " + new_name
 		result = true
 		dependant = true
 	} else if _, isChan := (type_expr).(*ast.ChanType); isChan {
@@ -1379,7 +1379,7 @@ var basicTypesMap = map[string]string{
 	"complex64":  "GoComplex64_",
 	"complex128": "GoComplex128_",
 	"string":     "GoString_",
-	"bool":       "bool",
+	"bool":       "BOOL",
 	"error":      "GoInt32_",
 }
 
