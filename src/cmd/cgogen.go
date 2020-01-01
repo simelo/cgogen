@@ -40,7 +40,7 @@ func (c *Config) register() {
 	flag.StringVar(&c.OutputFileGO, "g", "", "PATH to destination file for go code")
 	flag.StringVar(&c.OutputFileC, "c", "", "PATH to destination file for C code")
 	flag.StringVar(&c.OutputFileCH, "h", "", "PATH to destination file for header C code")
-	flag.BoolVar(&c.Verbose, "v", false, "Print debug message to stdout")
+	flag.BoolVar(&c.Verbose, "v", true, "Print debug message to stdout")
 	flag.BoolVar(&c.FullTranspile, "full", false, "Full conversion to C code")
 	flag.BoolVar(&c.ProcessFunctions, "f", false, "Process functions")
 	flag.BoolVar(&c.ProcessTypes, "t", false, "Process Types")
@@ -78,8 +78,6 @@ var inplaceConvertTypes = []string{
 
 var mainPackagePath = string("github.com/SkycoinProject/skycoin/src/")
 
-//var mainPackagePath = string ("")
-
 func dumpObjectScope(pkg ast.Scope) {
 	s := reflect.ValueOf(pkg).Elem()
 	typeOfT := s.Type()
@@ -102,22 +100,22 @@ func dumpObject(pkg ast.Object) {
 	}
 }
 
-//func dumpVar(decl ast.Decl) {
-//	s := reflect.ValueOf(decl).Elem()
-//	typeOfT := s.Type()
-//	fmt.Println(typeOfT)
-//	for i := 0; i < s.NumField(); i++ {
-//		f := s.Field(i)
-//		fmt.Printf("Field %d: %s %s = %v\n", i,
-//			typeOfT.Field(i).Name, f.Type(), f.Interface())
-//	}
-//	if identExpr, isIdent := (decl).(*ast.Ident); isIdent {
-//		if identExpr.Obj != nil {
-//			fmt.Println("ObjName: ", identExpr.Obj.Name)
-//			fmt.Println("Type: ", identExpr.Obj.Type)
-//		}
-//	}
-//}
+func dumpVar(decl ast.Decl) {
+	s := reflect.ValueOf(decl).Elem()
+	typeOfT := s.Type()
+	fmt.Println(typeOfT)
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		fmt.Printf("Field %d: %s %s = %v\n", i,
+			typeOfT.Field(i).Name, f.Type(), f.Interface())
+	}
+	// if identExpr, isIdent := (decl).(*ast.Ident); isIdent {
+	// 	if identExpr.Obj != nil {
+	// 		fmt.Println("ObjName: ", identExpr.Obj.Name)
+	// 		fmt.Println("Type: ", identExpr.Obj.Type)
+	// 	}
+	// }
+}
 
 var arrayTypes = []string{
 	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160",
@@ -126,11 +124,12 @@ var arrayTypes = []string{
 //Imports used in this code file
 var importDefs [](*ast.GenDecl)
 
+// //types that will be replaced by handles
+// var handleTypes = map[string]string{
+// 	"coin.Transactions": "Transactions",
+// }
 //types that will be replaced by handles
-var handleTypes = map[string]string{
-	"wallet.Wallet": "Wallet",
-	"api.WalletResponse": "WalletResponse",
-}
+var handleTypes map[string]string
 
 var return_var_name = "____error_code"
 var return_err_name = "____return_err"
@@ -138,7 +137,7 @@ var deal_out_string_as_gostring = true
 var get_package_path_from_file_name = true
 
 func main() {
-	//handleTypes = make(map[string]string)
+	handleTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
 
@@ -450,8 +449,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 					isDealt = isInHandleTypesList(extern_package + "." + typeName)
 					if isDealt {
 						spec = getHandleName(extern_package + "." + typeName)
-					} else
-					if isInCustomTypesList(extern_package + "." + typeName) {
+					} else if isInCustomTypesList(extern_package + "." + typeName) {
 						spec = getCustomTypeName(extern_package + "." + typeName)
 						isDealt = true
 					} else if !isSkycoinName(extern_package) {
@@ -570,7 +568,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	applog("Processing %v \n", funcName)
 	var blockParams []jen.Code
 
-	blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Lit(0))
+	blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Id("SKY_OK"))
 
 	var params jen.Statement
 	var isPointerRecv bool
@@ -591,7 +589,6 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		if !ok || isTypeSpecInDependantList(typeSpec, dependant_types) {
 			isDependant = true
 			if cfg.IgnoreDependants {
-				//TODO: stdevEclipse Check if type can be replaced by another type or handle
 				return
 			}
 		}
