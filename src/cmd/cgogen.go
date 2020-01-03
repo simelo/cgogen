@@ -436,8 +436,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 				isDealt = isInHandleTypesList(typeName)
 				if isDealt {
 					spec = getHandleName(typeName)
-				} else
-				if isInCustomTypesList(typeName) {
+				} else if isInCustomTypesList(typeName) {
 					spec = getCustomTypeName(typeName)
 					isDealt = true
 				}
@@ -634,7 +633,6 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 			if !ok || isTypeSpecInDependantList(typeName, dependant_types) {
 				isDependant = true
 				if cfg.IgnoreDependants {
-					//TODO: stdevEclipse Check if type can be replaced by another type or handle
 					return
 				}
 			}
@@ -811,6 +809,7 @@ func jenCodeToArray(statements ...jen.Code) []jen.Code {
 }
 
 /*Returns jen code to convert an input parameter from wrapper to original function*/
+// TODO: Arreglar esta funcion o al menos tracer
 func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name string, isPointer bool, outFile *jen.File) []jen.Code {
 	leftPart := jen.Id(name).Op(":=")
 	if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
@@ -1006,7 +1005,16 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 	c_code := ""
 	result := false
 	dependant := false
-	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
+	log.Printf("Fuctions processTypeExpression " + package_name + "." + name)
+	if _, isHandle := handleTypes[package_name+"."+name]; isHandle {
+		new_name := name
+		if depth == 1 {
+			new_name = package_name + package_separator + name
+		}
+		c_code += "Handle " + new_name
+		result = true
+		dependant = true
+	} else if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
 		c_code += "struct{\n"
 		error := false
 		for _, field := range typeStruct.Fields.List {
