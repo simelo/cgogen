@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-func FullTranspile(sourcedir string, outdir string){
+func Full_Transpile(sourcedir string, outdir string){
 	applog("Processing dir %s", sourcedir)
 	compilers := make( map[string]*CCompiler)
 	fset := token.NewFileSet()

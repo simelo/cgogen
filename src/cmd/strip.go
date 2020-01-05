@@ -1,22 +1,19 @@
 package main
 
 import (
-	"flag"
-	"fmt"
-	"os"
 	"io"
-	"strings"
+	"os"
 )
 
-func main(){
-	var path string
-	flag.StringVar(&path, "i", "", "PATH to source file")
-	flag.Parse()
-	fmt.Println(path)
-	dest := strings.Replace(path, "./", "", -1)
-	dest = strings.Replace(dest, "/", ".", -1)
-	copyFile(path, "../../test/" + dest)
-}
+//func main(){
+//	var path string
+//	flag.StringVar(&path, "i", "", "PATH to source file")
+//	flag.Parse()
+//	fmt.Println(path)
+//	dest := strings.Replace(path, "./", "", -1)
+//	dest = strings.Replace(dest, "/", ".", -1)
+//	copyFile(path, "../../test/" + dest)
+//}
 
 func copyFile(source string, dest string){
 	sf, err := os.Open(source)
