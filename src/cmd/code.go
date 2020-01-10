@@ -1,29 +1,25 @@
 package main
 
 import (
-	"strings"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"reflect"
-	"fmt"
+	"strings"
 )
 
 func (c *CCompiler) createSignature(f *Function) string {
-	signature := buildTypeWithVarName( f.returnType, "")  + " " + f.name + "("
+	signature := buildTypeWithVarName(f.returnType, "") + " " + f.name + "("
 	var paramsCode []string
 	for _, p := range f.parameters {
-		paramsCode = append( paramsCode, p.ccode )
+		paramsCode = append(paramsCode, p.ccode)
 	}
-	signature += strings.Join( paramsCode, ", " )
+	signature += strings.Join(paramsCode, ", ")
 	signature += ")"
 	return signature
 }
 
-func (c *CCompiler) generateBody(f *Function, block *ast.BlockStmt) string {
-	return c.generateBlock(block)
-}
-
-func (c *CCompiler) generateBlock(block *ast.BlockStmt) (code string){
+func (c *CCompiler) generateBlock(block *ast.BlockStmt) (code string) {
 	code = "{\n"
 	c.pushStack()
 	for _, stmt := range block.List {
@@ -59,22 +55,22 @@ func (c *CCompiler) generateDeclaration(decl ast.GenDecl) string {
 	} else if decl.Tok == token.VAR {
 		return c.generateVar(decl)
 	} else {
-		return "" 
+		return ""
 	}
 }
 
-func (c *CCompiler) generateConst(decl ast.GenDecl) ( code string ) {
+func (c *CCompiler) generateConst(decl ast.GenDecl) (code string) {
 	code = ""
-	for _, s := range decl.Specs{
+	for _, s := range decl.Specs {
 		if valueSpec, isValueSpec := (s).(*ast.ValueSpec); isValueSpec {
-			
+
 			typecode := ""
 			typeok := false
 			if valueSpec.Type != nil {
-				typecode, typeok = c.processTypeExpression( valueSpec.Type)
+				typecode, typeok = c.processTypeExpression(valueSpec.Type)
 			}
 			if !typeok {
-				typecode = "" 
+				typecode = ""
 			}
 			for index, name := range valueSpec.Names {
 				const_code := ""
@@ -95,25 +91,25 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) ( code string ) {
 					}
 				}
 				if ntok && valueok {
-					if tc == "GoUint32_" || tc == "GoFloat32_" || 
-						tc == "GoUint64_" || 
+					if tc == "GoUint32_" ||
+						tc == "GoUint64_" ||
 						tc == "GoFloat32_" || tc == "GoInt32_" ||
 						tc == "GoInt64_" || tc == "GoString_" {
 						const_code += "#define " + sname + " " + value + "\n"
 					} else {
-						const_code += buildTypeWithVarName( tc , sname )
+						const_code += buildTypeWithVarName(tc, sname)
 						const_code += " = " + value
 						const_code += ";\n"
 					}
 					stack := c.getTopOfStack()
-					consDef := ConstDef{ccode: const_code, 
-							name : sname, 
-							ctype : tc}
+					consDef := ConstDef{ccode: const_code,
+						name:  sname,
+						ctype: tc}
 					stack.constdefs = append(stack.constdefs, consDef)
 				}
 				code += const_code
 			}
-			
+
 		} else {
 			x := reflect.ValueOf(s).Elem()
 			typeOfT := x.Type()
@@ -125,16 +121,16 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) ( code string ) {
 
 func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 	code = ""
-	for _, s := range decl.Specs{
+	for _, s := range decl.Specs {
 		if valueSpec, isValueSpec := (s).(*ast.ValueSpec); isValueSpec {
-			
+
 			typecode := ""
 			typeok := false
 			if valueSpec.Type != nil {
-				typecode, typeok = c.processTypeExpression( valueSpec.Type)
+				typecode, typeok = c.processTypeExpression(valueSpec.Type)
 			}
 			if !typeok {
-				typecode = "" 
+				typecode = ""
 			}
 			for index, name := range valueSpec.Names {
 				varcode := ""
@@ -155,7 +151,7 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 					}
 				}
 				if ntok {
-					varcode += buildTypeWithVarName( tc , sname)
+					varcode += buildTypeWithVarName(tc, sname)
 					initcode := ""
 					if valueok && value != "" {
 						varcode += " = " + value
@@ -165,14 +161,14 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 					}
 					varcode += ";\n"
 					varcode += initcode
-					varDef := VarDef{ccode: varcode, name : sname, 
-						ctype : tc}
+					varDef := VarDef{ccode: varcode, name: sname,
+						ctype: tc}
 					stack := c.getTopOfStack()
 					stack.vardefs = append(stack.vardefs, varDef)
 				}
 				code += varcode
 			}
-			
+
 		} else {
 			x := reflect.ValueOf(s).Elem()
 			typeOfT := x.Type()
@@ -181,4 +177,3 @@ func (c *CCompiler) generateVar(decl ast.GenDecl) (code string) {
 	}
 	return code
 }
-
