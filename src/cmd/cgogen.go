@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -8,29 +9,28 @@ import (
 	"go/token"
 	"log"
 	"os"
-	"github.com/dave/jennifer/jen"
 	"strings"
-	//"reflect"
-	"bytes"
+
+	"github.com/dave/jennifer/jen"
 )
 
 type Config struct {
-	Path    			string
-	Verbose 			bool
-	ProcessFunctions	bool
-	ProcessTypes		bool
-	OutputFileGO 		string
-	OutputFileC			string
-	OutputFileCH		string
+	Path                string
+	Verbose             bool
+	ProcessFunctions    bool
+	ProcessTypes        bool
+	OutputFileGO        string
+	OutputFileC         string
+	OutputFileCH        string
 	ProcessDependencies bool
 	DependOnlyExternal  bool
-	TypeDependencyFile	string
-	FuncDependencyFile	string
-	TypeConversionFile	string
-	IgnoreDependants	bool
-	FullTranspile		bool //Full conversion to c code
-	FullTranspileDir	string
-	FullTranspileOut	string
+	TypeDependencyFile  string
+	FuncDependencyFile  string
+	TypeConversionFile  string
+	IgnoreDependants    bool
+	FullTranspile       bool //Full conversion to c code
+	FullTranspileDir    string
+	FullTranspileOut    string
 }
 
 func (c *Config) register() {
@@ -59,16 +59,14 @@ var (
 	}
 )
 
-
-
-//Map of types that will replaced by custom types	
+//Map of types that will replaced by custom types
 var customTypesMap = make(map[string]string)
 
 //Types that will use functions of type inplace to convert
-var inplaceConvertTypesPackages = map[string]string {
-	"PubKeySlice" : "cipher", 
-	"Address" : "cipher",
-	"BalanceResult" : "cli",
+var inplaceConvertTypesPackages = map[string]string{
+	"PubKeySlice":   "cipher",
+	"Address":       "cipher",
+	"BalanceResult": "cli",
 }
 
 //These types will be converted using inplace functions
@@ -76,9 +74,10 @@ var inplaceConvertTypes = []string{
 	"PubKeySlice", "Address", "BalanceResult",
 }
 
-var mainPackagePath = string ("github.com/skycoin/skycoin/src/")
+var mainPackagePath = string("github.com/skycoin/skycoin/src/")
+
 //var mainPackagePath = string ("")
-/*	
+/*
 func dumpObjectScope(pkg ast.Scope){
 	s := reflect.ValueOf(pkg).Elem()
 	typeOfT := s.Type()
@@ -100,7 +99,7 @@ func dumpObject(pkg ast.Object){
 			typeOfT.Field(i).Name, f.Type(), f.Interface())
 	}
 }
-	
+
 func dumpVar(decl ast.Decl){
 	s := reflect.ValueOf(decl).Elem()
 	typeOfT := s.Type()
@@ -119,18 +118,18 @@ func dumpVar(decl ast.Decl){
 }*/
 
 var arrayTypes = []string{
-	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160", 
-}	
+	"PubKey", "SHA256", "Sig", "SecKey", "Ripemd160",
+}
 
 //Imports used in this code file
 var importDefs [](*ast.GenDecl)
+
 //types that will be replaced by handles
 var handleTypes map[string]string
 var return_var_name = "____error_code"
 var return_err_name = "____return_err"
 var deal_out_string_as_gostring = true
 var get_package_path_from_file_name = true
-
 
 func main() {
 	handleTypes = make(map[string]string)
@@ -140,7 +139,7 @@ func main() {
 	if cfg.Verbose {
 		applog = log.Printf
 	}
-	
+
 	if cfg.FullTranspile {
 		doFullTranspile()
 	} else {
@@ -148,10 +147,10 @@ func main() {
 	}
 }
 
-func doGoFile(){
+func doGoFile() {
 	var dependant_functions []string
 	var dependant_types []string
-	var type_conversions [] string
+	var type_conversions []string
 	if cfg.ProcessDependencies {
 		if cfg.TypeDependencyFile != "" {
 			dependant_types = loadDependencyFile(cfg.TypeDependencyFile, "|")
@@ -163,7 +162,7 @@ func doGoFile(){
 	if cfg.TypeConversionFile != "" {
 		type_conversions = loadDependencyFile(cfg.TypeConversionFile, "\n")
 		for _, str := range type_conversions {
-			processTypeSetting( str )
+			processTypeSetting(str)
 		}
 	}
 	applog("Opening %v \n", cfg.Path)
@@ -173,57 +172,54 @@ func doGoFile(){
 	defer fo.Close()
 
 	fset := token.NewFileSet()
-	fast, err := parser.ParseFile(fset, "", fo, parser.AllErrors | parser.ParseComments)
+	fast, err := parser.ParseFile(fset, "", fo, parser.AllErrors|parser.ParseComments)
 	check(err)
-	
+
 	packagePath := ""
 	if get_package_path_from_file_name {
 		packagePath = getPackagePathFromFileName(cfg.Path) + "/" + fast.Name.Name
-		applog("Package Path: %s " , packagePath)
+		applog("Package Path: %s ", packagePath)
 	}
 	if packagePath == "" {
 		packagePath = fast.Name.Name
 	}
 
-	
 	var outFile *jen.File
 	outFile = nil
-	
+
 	if cfg.ProcessFunctions {
 		outFile = jen.NewFile("main")
-		
+
 		outFile.CgoPreamble(`
 	  #include <string.h>
 	  #include <stdlib.h>
 	  
 	  #include "../../include/skytypes.h"`)
 	}
-	
-	typeDefs := make ( [](*ast.GenDecl), 0 )
-	
+
+	typeDefs := make([](*ast.GenDecl), 0)
+
 	for _, _decl := range fast.Decls {
-	
-		
-		
+
 		if cfg.ProcessFunctions {
 			if decl, ok := (_decl).(*ast.FuncDecl); ok {
-				
+
 				var plist *[]string
 				plist = nil
 				if cfg.ProcessDependencies {
 					plist = &dependant_types
 				}
 				if isDependant := processFunc(fast, decl, outFile, plist); isDependant {
-					addDependant(&dependant_functions, packagePath + " " + decl.Name.Name)
+					addDependant(&dependant_functions, packagePath+" "+decl.Name.Name)
 				}
-			} 
+			}
 		}
 		if cfg.ProcessTypes {
 			if decl, ok := (_decl).(*ast.GenDecl); ok {
 				if decl.Tok == token.TYPE {
-					typeDefs = append ( typeDefs, decl )
+					typeDefs = append(typeDefs, decl)
 				} else if decl.Tok == token.IMPORT {
-					importDefs = append( importDefs, decl )
+					importDefs = append(importDefs, decl)
 				}
 			}
 		}
@@ -247,7 +243,7 @@ func doGoFile(){
 	if cfg.ProcessDependencies {
 		if cfg.TypeDependencyFile != "" {
 			saveDependencyFile(cfg.TypeDependencyFile, dependant_types, "|")
-			
+
 		} else {
 			fmt.Println("Dependant Types: ", dependant_types)
 		}
@@ -257,13 +253,13 @@ func doGoFile(){
 			fmt.Println("Dependant Functions: ", dependant_functions)
 		}
 	}
-	applog("Finished %v", cfg.Path) 
+	applog("Finished %v", cfg.Path)
 	if cfg.OutputFileGO != "" {
 		fixExportComment(cfg.OutputFileGO)
 	}
 }
 
-func doFullTranspile(){
+func doFullTranspile() {
 	/*if cfg.FullTranspileDir == "" {
 		fmt.Println("Must specify full transpile source directory")
 		return
@@ -275,19 +271,19 @@ func doFullTranspile(){
 	FullTranspile(cfg.FullTranspileDir, cfg.FullTranspileOut)*/
 }
 
-func saveTextToFile(fileName string, text string){
+func saveTextToFile(fileName string, text string) {
 	f, err := os.Create(fileName)
 	check(err)
 	defer f.Close()
-	f.WriteString( text )
+	f.WriteString(text)
 	f.Sync()
 }
 
-func saveDependencyFile(path string, list []string, separator string){
+func saveDependencyFile(path string, list []string, separator string) {
 	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
-	f.WriteString( strings.Join( list, separator ) )
+	f.WriteString(strings.Join(list, separator))
 	f.Sync()
 }
 
@@ -302,12 +298,12 @@ func loadDependencyFile(path string, separator string) (list []string) {
 		for _, str := range tlist {
 			nstr := strings.Replace(str, "\r", "", -1)
 			nstr = strings.Replace(nstr, "\n", "", -1)
-			if nstr != ""{
-				list = append( list, nstr )
+			if nstr != "" {
+				list = append(list, nstr)
 			}
 		}
 	}
-	return 
+	return
 }
 
 func check(err error) {
@@ -324,15 +320,15 @@ func isAsciiUpper(c rune) bool {
 //Returns the path of the package imported
 func findImportPath(importName string) (string, bool) {
 	for _, importDef := range importDefs {
-		for _, s := range importDef.Specs{
+		for _, s := range importDef.Specs {
 			if importSpec, isImportSpec := (s).(*ast.ImportSpec); isImportSpec {
 				name := ""
 				path := importSpec.Path.Value
-				
-				if strings.HasPrefix( path, "\"") {
+
+				if strings.HasPrefix(path, "\"") {
 					path = path[1:]
 				}
-				if strings.HasSuffix( path, "\"") {
+				if strings.HasSuffix(path, "\"") {
 					path = path[:len(path)-1]
 				}
 				if importSpec.Name != nil {
@@ -340,7 +336,7 @@ func findImportPath(importName string) (string, bool) {
 				} else {
 					path_parts := strings.Split(path, "/")
 					if len(path_parts) > 0 {
-						name = path_parts[ len(path_parts) -1 ]
+						name = path_parts[len(path_parts)-1]
 					}
 				}
 				if name == importName {
@@ -391,7 +387,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 		if ellipsisExpr, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
 			tspec, ok := typeSpecStr(&ellipsisExpr.Elt, package_name, isOutput)
 			if ok {
-				spec += "..." +  tspec
+				spec += "..." + tspec
 				_typeExpr = nil
 				continue
 			} else {
@@ -436,10 +432,10 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 				if isDealt {
 					spec = getHandleName(typeName)
 				} else */
-				if(isInCustomTypesList(typeName)) {
+				if isInCustomTypesList(typeName) {
 					spec = getCustomTypeName(typeName)
 					isDealt = true
-				} 
+				}
 			} else {
 				typeName = selExpr.Sel.Name
 				identSelExpr, isSelIdent := (selExpr.X).(*ast.Ident)
@@ -449,7 +445,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 					if isDealt {
 						spec = getHandleName(extern_package + "." + typeName)
 					} else */
-					if(isInCustomTypesList(extern_package + "." + typeName)) {
+					if isInCustomTypesList(extern_package + "." + typeName) {
 						spec = getCustomTypeName(extern_package + "." + typeName)
 						isDealt = true
 					} else if !isSkycoinName(extern_package) {
@@ -529,16 +525,16 @@ func getPackagePathFromFileName(filePath string) string {
 	packagePath := ""
 	folders := strings.Split(filePath, "/")
 	if len(folders) > 0 {
-		fileName := folders[len(folders) - 1]
+		fileName := folders[len(folders)-1]
 		packageFolders := strings.Split(fileName, ".")
 		if len(packageFolders) > 2 {
 			packageFolders = packageFolders[:len(packageFolders)-2]
 			var result []string
 			for _, s := range packageFolders {
-				if s == "internal" || s == "example" { 
+				if s == "internal" || s == "example" {
 					break
 				} else {
-					result = append( result, s)
+					result = append(result, s)
 				}
 			}
 			packagePath = strings.Join(result, "/")
@@ -567,11 +563,11 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 
 	applog("Processing %v \n", funcName)
 	var blockParams []jen.Code
-	
-	blockParams = append( blockParams, jen.Id(return_var_name).Op("=").Lit(0) )
+
+	blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Lit(0))
 	call_catch_panic_code := jen.Id(return_var_name).Op("=").Id("catchApiPanic").Call(jen.Id(return_var_name), jen.Id("recover").Call())
-	blockParams = append( blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call() )
-	
+	blockParams = append(blockParams, jen.Defer().Func().Params().Block(call_catch_panic_code).Call())
+
 	var params jen.Statement
 	var isPointerRecv bool
 	if receiver := fdecl.Recv; receiver != nil {
@@ -588,7 +584,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		recvParamName := receiver.List[0].Names[0].Name
 		recvParam := jen.Id(argName(recvParamName))
 		typeSpec, ok := typeSpecStr(_type, fast.Name.Name, false)
-		if !ok || isTypeSpecInDependantList( typeSpec, dependant_types ) {
+		if !ok || isTypeSpecInDependantList(typeSpec, dependant_types) {
 			isDependant = true
 			if cfg.IgnoreDependants {
 				//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -600,14 +596,14 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		funcName = typeName + "_" + funcName
 		convertCodes := getCodeToConvertInParameter(_type, fast.Name.Name, recvParamName, isPointerRecv, outFile)
 		if convertCodes != nil {
-			blockParams = append( blockParams, convertCodes... )
+			blockParams = append(blockParams, convertCodes...)
 		}
 	}
-	
+
 	allparams := fdecl.Type.Params.List[:]
 	return_fields_index := len(allparams)
 	var retField *ast.Field = nil
-	
+
 	if fdecl.Type.Results != nil && fdecl.Type.Results.List != nil {
 		//Find the return argument of type error.
 		//It should always be the last argument but search just in case
@@ -629,12 +625,12 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	}
 
 	var output_vars_convert_code []jen.Code
-	
+
 	for fieldIdx, field := range allparams {
 		if fieldIdx >= return_fields_index {
 			// Field in return types list
 			typeName, ok := typeSpecStr(&field.Type, fast.Name.Name, true)
-			if !ok || isTypeSpecInDependantList( typeName, dependant_types ) {
+			if !ok || isTypeSpecInDependantList(typeName, dependant_types) {
 				isDependant = true
 				if cfg.IgnoreDependants {
 					//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -643,20 +639,20 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 			}
 			if len(typeName) > 0 && rune(typeName[0]) == '[' {
 				typeName = "*C.GoSlice_"
-			} else if(deal_out_string_as_gostring && typeName == "string") {
+			} else if deal_out_string_as_gostring && typeName == "string" {
 				typeName = "*C.GoString_"
 			} else if IsBasicGoType(typeName) {
 				typeName = "*" + typeName
 			} else if typeName == "map[string]string" {
 				typeName = "*C.GoStringMap_"
 			}
-			paramName := argName("arg"+fmt.Sprintf("%d", fieldIdx))
+			paramName := argName("arg" + fmt.Sprintf("%d", fieldIdx))
 			params = append(params, jen.Id(paramName).Id(typeName))
 			convertCode := getCodeToConvertOutParameter(&field.Type, fast.Name.Name, paramName, false)
 			if convertCode != nil {
-				output_vars_convert_code = append( output_vars_convert_code, convertCode )
+				output_vars_convert_code = append(output_vars_convert_code, convertCode)
 			}
-			
+
 		} else {
 			lastNameIdx := len(field.Names) - 1
 			for nameIdx, ident := range field.Names {
@@ -664,7 +660,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 					params = append(params, jen.Id(argName(ident.Name)))
 				} else {
 					typeName, ok := typeSpecStr(&field.Type, fast.Name.Name, false)
-					if !ok || isTypeSpecInDependantList( typeName, dependant_types ) {
+					if !ok || isTypeSpecInDependantList(typeName, dependant_types) {
 						isDependant = true
 						if cfg.IgnoreDependants {
 							//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -676,12 +672,12 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 				}
 				convertCodes := getCodeToConvertInParameter(&field.Type, fast.Name.Name, ident.Name, false, outFile)
 				if convertCodes != nil {
-					blockParams = append( blockParams, convertCodes... )
+					blockParams = append(blockParams, convertCodes...)
 				}
 			}
 		}
 	}
-	
+
 	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
 	stmt := outFile.Comment("export " + cfuncName)
 	stmt = outFile.Func().Id(cfuncName)
@@ -697,7 +693,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	if return_fields_index < len(allparams) {
 		for i := return_fields_index; i < len(allparams); i++ {
 			retvars = append(retvars, jen.Id(resultName("arg"+fmt.Sprintf("%d", i))))
-		}		
+		}
 	}
 	if retField != nil {
 		retvars = append(retvars, jen.Id(return_err_name))
@@ -705,15 +701,15 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	var call_func_code jen.Code
 	if len(retvars) > 0 {
 		if fdecl.Recv != nil {
-			call_func_code = 
+			call_func_code =
 				jen.List(retvars...).Op(":=").Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
 		} else {
 			if mainPackagePath != "" {
-				call_func_code = 
-					jen.List(retvars...).Op(":=").Qual(mainPackagePath + packagePath,
+				call_func_code =
+					jen.List(retvars...).Op(":=").Qual(mainPackagePath+packagePath,
 						fdecl.Name.Name).Call(callparams...)
 			} else {
-				call_func_code = 
+				call_func_code =
 					jen.List(retvars...).Op(":=").Id(fdecl.Name.Name).Call(callparams...)
 			}
 		}
@@ -722,15 +718,15 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 			call_func_code = jen.Id(fdecl.Recv.List[0].Names[0].Name).Dot(fdecl.Name.Name).Call(callparams...)
 		} else {
 			if mainPackagePath != "" {
-				call_func_code = jen.Qual(mainPackagePath + packagePath,
+				call_func_code = jen.Qual(mainPackagePath+packagePath,
 					fdecl.Name.Name).Call(callparams...)
 			} else {
 				call_func_code = jen.Id(fdecl.Name.Name).Call(callparams...)
 			}
 		}
 	}
-	blockParams = append(blockParams, call_func_code,)
-	
+	blockParams = append(blockParams, call_func_code)
+
 	stmt = stmt.Parens(jen.Id(return_var_name).Id("uint32"))
 	if retField != nil {
 		blockParams = append(blockParams, jen.Id(return_var_name).Op("=").Id("libErrorCode").Call(jen.Id(return_err_name)))
@@ -739,24 +735,24 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	} else {
 		blockParams = append(blockParams, output_vars_convert_code...)
 	}
-	
+
 	blockParams = append(blockParams, jen.Return())
-	
+
 	stmt.Block(blockParams...)
 	return
 }
 
 //Check if type is in dependant list
-func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
+func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool {
 	if dependant_list == nil {
 		return false
 	}
 	//Do not allow extern types in function parameters
-	if strings.Index( typeSpec, "C._") >= 0 { 
+	if strings.Index(typeSpec, "C._") >= 0 {
 		return true
 	}
 	for _, t := range *dependant_list {
-		if strings.HasSuffix(typeSpec, "C." + t) {
+		if strings.HasSuffix(typeSpec, "C."+t) {
 			return true
 		}
 	}
@@ -764,8 +760,8 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool{
 }
 
 //Creates code to make a typecast
-func getTypeCastCode(leftPart *jen.Statement, typeExpr *ast.Expr, 
-					packName string, name string, outFile *jen.File) jen.Code {
+func getTypeCastCode(leftPart *jen.Statement, typeExpr *ast.Expr,
+	packName string, name string, outFile *jen.File) jen.Code {
 	if identExpr, isIdent := (*typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
 		if IsBasicGoType(typeName) {
@@ -793,12 +789,12 @@ func getLookupHandleCode(name string, typeName string, isPointer bool) []jen.Cod
 	if !isPointer {
 		varname = "__" + name
 	}
-	listVar := jen.List(jen.Id(varname), jen.Id("ok" + name)).Op(":=")
+	listVar := jen.List(jen.Id(varname), jen.Id("ok"+name)).Op(":=")
 	var lookUpName string
 	lookUpName = "lookup" + handleTypes[typeName] + "Handle"
 	listVar = listVar.Id(lookUpName).Call(jen.Op("*").Id(argName(name)))
-	checkError := jen.If(jen.Op("!").Id("ok" + name)).
-		Block(jen.Id(return_var_name).Op("=").Id("SKY_ERROR"),jen.Return())
+	checkError := jen.If(jen.Op("!").Id("ok"+name)).
+		Block(jen.Id(return_var_name).Op("=").Id("SKY_ERROR"), jen.Return())
 	if !isPointer {
 		assign := jen.Id(name).Op(":=").Op("*").Id(varname)
 		return jenCodeToArray(listVar, checkError, assign)
@@ -807,14 +803,14 @@ func getLookupHandleCode(name string, typeName string, isPointer bool) []jen.Cod
 	}
 }
 
-func jenCodeToArray(statements ...jen.Code) []jen.Code{
+func jenCodeToArray(statements ...jen.Code) []jen.Code {
 	var codeArray []jen.Code
 	codeArray = append(codeArray, statements...)
 	return codeArray
 }
 
 /*Returns jen code to convert an input parameter from wrapper to original function*/
-func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name string, isPointer bool, outFile *jen.File) []jen.Code{
+func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name string, isPointer bool, outFile *jen.File) []jen.Code {
 	leftPart := jen.Id(name).Op(":=")
 	if arrayExpr, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		typeExpr := arrayExpr.Elt
@@ -830,7 +826,7 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 			if !isPointer {
 				leftPart = leftPart.Op("*")
 			}
-			leftPart = leftPart.Parens( arrayTypeCode )
+			leftPart = leftPart.Parens(arrayTypeCode)
 			var argCode jen.Code
 			if !isPointer && arrayExpr.Len == nil {
 				argCode = jen.Op("&").Id(argName(name))
@@ -848,16 +844,16 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 		typeName := identExpr.Name
 		if IsBasicGoType(typeName) {
 			return jenCodeToArray(leftPart.Id(argName(name)))
-		/*} else if isInHandleTypesList(typeName) {
+			/*} else if isInHandleTypesList(typeName) {
 			return getLookupHandleCode(name, typeName, isPointer)*/
 		} else if isInplaceConvertType(typeName) {
 			if !isPointer {
 				leftPart = leftPart.Op("*")
-			} 
-			return jenCodeToArray( leftPart.Id("inplace"+typeName).Call(jen.Id(argName(name))) )
+			}
+			return jenCodeToArray(leftPart.Id("inplace" + typeName).Call(jen.Id(argName(name))))
 		} else {
 			if isInHandleTypesList(packName + package_separator + typeName) {
-				return getLookupHandleCode(name, packName + package_separator + typeName, isPointer)
+				return getLookupHandleCode(name, packName+package_separator+typeName, isPointer)
 			} else {
 				packagePath := ""
 				if get_package_path_from_file_name {
@@ -865,9 +861,9 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 				}
 				if !isPointer {
 					leftPart = leftPart.Op("*")
-				} 
-				return jenCodeToArray( leftPart.Parens(jen.Op("*").Qual(mainPackagePath + packagePath, typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) ) )
+				}
+				return jenCodeToArray(leftPart.Parens(jen.Op("*").Qual(mainPackagePath+packagePath, typeName)).
+					Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name)))))
 			}
 		}
 	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
@@ -875,29 +871,29 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 			packName = identExpr.Name
 			typeName := selectorExpr.Sel.Name
 			if isInHandleTypesList(packName + package_separator + typeName) {
-				return getLookupHandleCode(name, packName + package_separator + typeName, isPointer)
+				return getLookupHandleCode(name, packName+package_separator+typeName, isPointer)
 			}
 		}
 		if !isPointer {
 			leftPart = leftPart.Op("*")
 		}
 		typeCastCode := getTypeCastCode(jen.Op("*"), _typeExpr, packName, name, outFile)
-		return jenCodeToArray( leftPart.Parens(typeCastCode).
-			Parens( jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))) ) )
+		return jenCodeToArray(leftPart.Parens(typeCastCode).
+			Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name)))))
 	} else if _, isEllipsis := (*_typeExpr).(*ast.Ellipsis); isEllipsis {
 		//TODO: stdevEclipse Implement
-		return jenCodeToArray( leftPart.Id(argName(name)) )
+		return jenCodeToArray(leftPart.Id(argName(name)))
 	} else if _, isIntf := (*_typeExpr).(*ast.InterfaceType); isIntf {
-		return jenCodeToArray( leftPart.Id("convertToInterface").Call(jen.Id(argName(name))) )
+		return jenCodeToArray(leftPart.Id("convertToInterface").Call(jen.Id(argName(name))))
 	} else if _, isFunc := (*_typeExpr).(*ast.FuncType); isFunc {
-		return jenCodeToArray( leftPart.Id("copyToFunc").Call(jen.Id(argName(name))) )
+		return jenCodeToArray(leftPart.Id("copyToFunc").Call(jen.Id(argName(name))))
 	}
 	return nil
 }
 
 /*Returns jen Code to convert an output parameter from original to wrapper function*/
-func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name string, isPointer bool) jen.Code{
-	
+func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name string, isPointer bool) jen.Code {
+
 	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		return jen.Id("copyToGoSlice").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name))),
 			jen.Id(name))
@@ -917,19 +913,19 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 			} else {
 				argCode = jen.Op("&").Id(argName(name))
 			}
-			return jen.Op("*").Id(name).Op("=").Id("register" + handleTypes[package_name + package_separator + typeName] + "Handle").Call(argCode)
+			return jen.Op("*").Id(name).Op("=").Id("register" + handleTypes[package_name+package_separator+typeName] + "Handle").Call(argCode)
 		} else if isSkyArrayType(typeName) {
 			var argCode jen.Code
 			if isPointer {
-				argCode = jen.Parens( jen.Op("*").Id(argName(name)) ).Op("[:]")
+				argCode = jen.Parens(jen.Op("*").Id(argName(name))).Op("[:]")
 			} else {
 				argCode = jen.Id(argName(name)).Op("[:]")
 			}
-		
-			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call( argCode ),
-							jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),			
-							jen.Id("uint").Parens(jen.Id("Sizeof" + typeName)))
-			
+
+			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(argCode),
+				jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),
+				jen.Id("uint").Parens(jen.Id("Sizeof"+typeName)))
+
 		} else {
 			var argCode jen.Code
 			if isPointer {
@@ -938,8 +934,8 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 				argCode = jen.Op("&").Id(argName(name))
 			}
 			return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", package_name + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens( argCode ) )
+				Qual("C", package_name+package_separator+typeName)).
+				Parens(jen.Qual("unsafe", "Pointer").Parens(argCode))
 		}
 	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
 		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
@@ -954,12 +950,12 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 			}
 			if isInHandleTypesList(selName + package_separator + typeName) {
 				return jen.Op("*").Id(name).Op("=").
-					Id("register" + handleTypes[selName + package_separator + typeName] + "Handle").
-						Call(argCode)
+					Id("register" + handleTypes[selName+package_separator+typeName] + "Handle").
+					Call(argCode)
 			} else {
 				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-					Qual("C", selName + package_separator + typeName)).
-						Parens( jen.Qual("unsafe", "Pointer").Parens( argCode ) )
+					Qual("C", selName+package_separator+typeName)).
+					Parens(jen.Qual("unsafe", "Pointer").Parens(argCode))
 			}
 		}
 	} else if mapExpr, isMap := (*_typeExpr).(*ast.MapType); isMap {
@@ -973,8 +969,6 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 	}
 	return nil
 }
-
-
 
 func isSkyArrayType(typeName string) bool {
 	for _, t := range arrayTypes {
@@ -1002,33 +996,32 @@ func getInplaceConvertTypePackage(typeName string) string {
 	}
 }
 
-
 /* Process a type expression. Returns the code in C for the type and ok if successfull */
-func processTypeExpression(fast *ast.File, type_expr ast.Expr, 
-							package_name string, name string, 
-							defined_types *[]string, 
-							forwards_declarations *[]string, depth int,
-							dependant_types *[]string) (string, bool, bool) {
+func processTypeExpression(fast *ast.File, type_expr ast.Expr,
+	package_name string, name string,
+	defined_types *[]string,
+	forwards_declarations *[]string, depth int,
+	dependant_types *[]string) (string, bool, bool) {
 	c_code := ""
 	result := false
 	dependant := false
 	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
 		c_code += "struct{\n"
 		error := false
-		for _, field := range typeStruct.Fields.List{
+		for _, field := range typeStruct.Fields.List {
 			var names []string
-			for _, fieldName := range field.Names{
-				names = append( names, fieldName.Name )
+			for _, fieldName := range field.Names {
+				names = append(names, fieldName.Name)
 			}
 			if len(names) == 0 {
-				names = append( names, "_unnamed")
+				names = append(names, "_unnamed")
 			}
-			for _, fieldName := range names{
-				for i := 0; i < depth * 4; i++{
+			for _, fieldName := range names {
+				for i := 0; i < depth*4; i++ {
 					c_code += " "
 				}
-				type_code, result, isFieldDependant := processTypeExpression(fast, field.Type, package_name, fieldName, 
-						defined_types, forwards_declarations, depth + 1, dependant_types)
+				type_code, result, isFieldDependant := processTypeExpression(fast, field.Type, package_name, fieldName,
+					defined_types, forwards_declarations, depth+1, dependant_types)
 				if result {
 					if isFieldDependant {
 						dependant = true
@@ -1039,23 +1032,22 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 				}
 				c_code += ";\n"
 			}
-			
-			
+
 		}
-		for i := 0; i < (depth - 1) * 4; i++{
+		for i := 0; i < (depth-1)*4; i++ {
 			c_code += " "
 		}
-		c_code += "} ";
+		c_code += "} "
 		typeName := name
 		if depth == 1 {
 			typeName = package_name + package_separator + typeName
 		}
 		c_code += typeName
 		if dependant && depth == 1 {
-			addDependant( dependant_types, typeName )
+			addDependant(dependant_types, typeName)
 		}
 		result = !error
-	}else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray {
+	} else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray {
 		var arrayCode string
 		var arrayElCode string
 		result = false
@@ -1068,19 +1060,19 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			arrayElCode = "GoSlice_ "
 			result = true
 		} else if litExpr, isLit := (arrayExpr.Len).(*ast.BasicLit); isLit {
-			arrayElCode, result, dependant = processTypeExpression(fast, arrayExpr.Elt, package_name, "", 
-					defined_types, forwards_declarations, depth + 1, dependant_types)
+			arrayElCode, result, dependant = processTypeExpression(fast, arrayExpr.Elt, package_name, "",
+				defined_types, forwards_declarations, depth+1, dependant_types)
 			if result {
-				arrayCode = new_name+"[" + litExpr.Value + "]"
+				arrayCode = new_name + "[" + litExpr.Value + "]"
 			}
 		}
 		if result {
 			if dependant && depth == 1 {
-				addDependant( dependant_types, new_name )
+				addDependant(dependant_types, new_name)
 			}
 			c_code += arrayElCode + " " + arrayCode
 		}
-	}else if _, isFunc := (type_expr).(*ast.FuncType); isFunc {
+	} else if _, isFunc := (type_expr).(*ast.FuncType); isFunc {
 		new_name := name
 		if depth == 1 {
 			new_name = package_name + package_separator + name
@@ -1088,7 +1080,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		c_code += "Handle " + new_name
 		result = true
 		dependant = true
-	}else if _, isIntf := (type_expr).(*ast.InterfaceType); isIntf {
+	} else if _, isIntf := (type_expr).(*ast.InterfaceType); isIntf {
 		new_name := name
 		if depth == 1 {
 			new_name = package_name + package_separator + name
@@ -1096,7 +1088,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		c_code += "GoInterface_ " + new_name
 		result = true
 		dependant = true
-	}else if _, isChan := (type_expr).(*ast.ChanType); isChan {
+	} else if _, isChan := (type_expr).(*ast.ChanType); isChan {
 		new_name := name
 		if depth == 1 {
 			new_name = package_name + package_separator + name
@@ -1104,7 +1096,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		c_code += "GoChan_ " + new_name
 		result = true
 		dependant = true
-	}else if _, isMap := (type_expr).(*ast.MapType); isMap {
+	} else if _, isMap := (type_expr).(*ast.MapType); isMap {
 		new_name := name
 		if depth == 1 {
 			new_name = package_name + package_separator + name
@@ -1112,10 +1104,10 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		c_code += "GoMap_ " + new_name
 		result = true
 		dependant = true
-	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
+	} else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
 		targetTypeExpr := starExpr.X
-		type_code, ok, isFieldDependant := processTypeExpression(fast, targetTypeExpr, package_name, "", 
-			defined_types, forwards_declarations, depth + 1, dependant_types)
+		type_code, ok, isFieldDependant := processTypeExpression(fast, targetTypeExpr, package_name, "",
+			defined_types, forwards_declarations, depth+1, dependant_types)
 		if ok {
 			if isFieldDependant {
 				dependant = true
@@ -1125,13 +1117,13 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			if depth == 1 {
 				new_name = package_name + package_separator + name
 			}
-			c_code += "* "  + new_name
-			if dependant  && depth == 1{
-				addDependant( dependant_types, new_name)
+			c_code += "* " + new_name
+			if dependant && depth == 1 {
+				addDependant(dependant_types, new_name)
 			}
 			result = true
 		}
-	}else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
+	} else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
 		type_code, isBasic := GetCTypeFromGoType(identExpr.Name)
 		if !isBasic {
 			addDependency := false
@@ -1163,15 +1155,15 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 			}
 		}
 		type_found := false
-		for _, defined_type := range *defined_types{
-			if defined_type == type_code{
+		for _, defined_type := range *defined_types {
+			if defined_type == type_code {
 				type_found = true
 			}
 		}
 		if dependant && depth == 1 {
-			addDependant( dependant_types, new_name )
+			addDependant(dependant_types, new_name)
 		}
-		if !type_found{
+		if !type_found {
 			if forwards_declarations != nil {
 				*forwards_declarations = append(*forwards_declarations, identExpr.Name)
 				result = true
@@ -1191,13 +1183,13 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		if depth == 1 {
 			new_name = package_name + package_separator + name
 		}
-		type_code, ok, isFieldDependant := processTypeExpression(fast, selectorExpr.Sel, extern_package, new_name, 
-			defined_types, forwards_declarations, depth + 1, dependant_types)
+		type_code, ok, isFieldDependant := processTypeExpression(fast, selectorExpr.Sel, extern_package, new_name,
+			defined_types, forwards_declarations, depth+1, dependant_types)
 		if isFieldDependant {
 			dependant = true
 		}
 		if dependant && depth == 1 {
-			addDependant( dependant_types, new_name )
+			addDependant(dependant_types, new_name)
 		}
 		if ok {
 			c_code = type_code
@@ -1216,25 +1208,25 @@ func isDependantType(dependant_types *[]string, typeName string) bool {
 	return false
 }
 
-func addDependant(dependant_types *[]string, typeName string){
+func addDependant(dependant_types *[]string, typeName string) {
 	for _, t := range *dependant_types {
 		if t == typeName {
 			return
 		}
 	}
-	*dependant_types = append( *dependant_types, typeName )
-} 
+	*dependant_types = append(*dependant_types, typeName)
+}
 
 /* Process a type definition in GO and returns the c code for the definition */
-func processTypeDef(fast *ast.File, tdecl *ast.GenDecl, 
-					defined_types *[]string, forwards_declarations *[]string,
-					dependant_types *[]string) (string, bool, bool) {
+func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
+	defined_types *[]string, forwards_declarations *[]string,
+	dependant_types *[]string) (string, bool, bool) {
 	result_code := ""
 	result := true
 	isDependant := false
-	for _, s := range tdecl.Specs{
+	for _, s := range tdecl.Specs {
 		if typeSpec, isTypeSpec := (s).(*ast.TypeSpec); isTypeSpec {
-			type_c_code, ok, isDependantExpr := processTypeExpression(fast, typeSpec.Type, 
+			type_c_code, ok, isDependantExpr := processTypeExpression(fast, typeSpec.Type,
 				fast.Name.Name, typeSpec.Name.Name, defined_types, forwards_declarations, 1,
 				dependant_types)
 			if ok {
@@ -1244,7 +1236,7 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 				result_code += "typedef "
 				result_code += type_c_code
 				result_code += ";\n"
-				*defined_types = append( *defined_types, fast.Name.Name + package_separator + typeSpec.Name.Name )
+				*defined_types = append(*defined_types, fast.Name.Name+package_separator+typeSpec.Name.Name)
 			} else {
 				result = false
 			}
@@ -1260,15 +1252,15 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 	for key, _ := range GetBasicTypes() {
 		ctype, ok := GetCTypeFromGoType(key)
 		if ok {
-			defined_types = append( defined_types, ctype )
+			defined_types = append(defined_types, ctype)
 		}
 	}
-	
-	unprocessed := len( typeDecls )
+
+	unprocessed := len(typeDecls)
 	went_blank := false
 	for unprocessed > 0 && !went_blank {
 		went_blank = true
-		for index, typeDecl := range typeDecls{
+		for index, typeDecl := range typeDecls {
 			if typeDecl != nil {
 				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &defined_types, nil, dependant_types)
 				if ok {
@@ -1282,11 +1274,11 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 			}
 		}
 	}
-	
+
 	//TODO: if unprocessed > 0 then there are cyclic type references. Use forward declarations.
 	var forwards_declarations []string
 	if unprocessed > 0 {
-		for _, typeDecl := range typeDecls{
+		for _, typeDecl := range typeDecls {
 			if typeDecl != nil {
 				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &defined_types, &forwards_declarations, dependant_types)
 				if ok {
@@ -1301,28 +1293,28 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 }
 
 //Remove extra space in export indication
-func fixExportComment(filePath string){
+func fixExportComment(filePath string) {
 	f, err := os.Open(filePath)
 	check(err)
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(f)
 	contents := buf.String()
 	f.Close()
-	
-	contents = strings.Replace( contents, "// export SKY_", "//export SKY_", -1)
+
+	contents = strings.Replace(contents, "// export SKY_", "//export SKY_", -1)
 	f, err = os.Create(filePath)
 	check(err)
-	f.WriteString( contents )
+	f.WriteString(contents)
 	f.Sync()
 	f.Close()
 }
 
-func processTypeSetting(comment string){
+func processTypeSetting(comment string) {
 	handlePrefix := "CGOGEN HANDLES "
 	typeConversionPrefix := "CGOGEN TYPES_CONVERSION "
 	if strings.HasPrefix(comment, handlePrefix) {
 		handlesPart := comment[len(handlePrefix):]
-		handles := strings.Split( handlesPart, "," )
+		handles := strings.Split(handlesPart, ",")
 		for _, handle := range handles {
 			handleParts := strings.Split(handle, "|")
 			if len(handleParts) > 1 {
@@ -1333,7 +1325,7 @@ func processTypeSetting(comment string){
 		}
 	} else if strings.HasPrefix(comment, typeConversionPrefix) {
 		typesPart := comment[len(typeConversionPrefix):]
-		types := strings.Split( typesPart, "," )
+		types := strings.Split(typesPart, ",")
 		for _, t := range types {
 			typesPart := strings.Split(t, "|")
 			if len(typesPart) > 1 {
@@ -1362,29 +1354,29 @@ func GetCTypeFromGoType(goType string) (string, bool) {
 	}
 }
 
-func GetBasicTypes() map[string]string{
+func GetBasicTypes() map[string]string {
 	return basicTypesMap
 }
 
 var basicTypesMap = map[string]string{
-	  "int": "GoInt_",
-	  "uint": "GoUint_",
-	  "int8": "GoInt8_",
-	  "int16": "GoInt16_",
-	  "int32": "GoInt32_",
-	  "int64": "GoInt64_",
-	  "byte": "GoUint8_",
-	  "uint8": "GoUint8_",
-	  "uint16": "GoUint16_",
-	  "uint32": "GoUint32_",
-	  "uint64": "GoUint64_",
-	  "float32" : "GoFloat32_",
-	  "float64" : "GoFloat64_",
-	  "complex64" : "GoComplex64_",
-	  "complex128" : "GoComplex128_",
-	  "string" : "GoString_",
-	  "bool" : "bool",
-	  "error" : "GoInt32_",
-	}
+	"int":        "GoInt_",
+	"uint":       "GoUint_",
+	"int8":       "GoInt8_",
+	"int16":      "GoInt16_",
+	"int32":      "GoInt32_",
+	"int64":      "GoInt64_",
+	"byte":       "GoUint8_",
+	"uint8":      "GoUint8_",
+	"uint16":     "GoUint16_",
+	"uint32":     "GoUint32_",
+	"uint64":     "GoUint64_",
+	"float32":    "GoFloat32_",
+	"float64":    "GoFloat64_",
+	"complex64":  "GoComplex64_",
+	"complex128": "GoComplex128_",
+	"string":     "GoString_",
+	"bool":       "bool",
+	"error":      "GoInt32_",
+}
 
 var package_separator = "__"

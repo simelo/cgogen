@@ -1,74 +1,74 @@
 package main
 
 import (
-	"go/ast"
-	"reflect"
-	"go/token"
 	"fmt"
+	"go/ast"
+	"go/token"
+	"reflect"
 	"strings"
 )
 
-type CCompiler struct{
-	source 			*ast.File
-	ccode  			*CCode
-	includes		[]string
-	currentType		*TypeDef
-	identsCount		int
-	defStack		[]*CCode
-	imports			map[string]*CCode
-	initializers	[]string
+type CCompiler struct {
+	source       *ast.File
+	ccode        *CCode
+	includes     []string
+	currentType  *TypeDef
+	identsCount  int
+	defStack     []*CCode
+	imports      map[string]*CCode
+	initializers []string
 }
 
 type CCode struct {
-	typedefs 		[]TypeDef
-	constdefs		[]ConstDef
-	vardefs			[]VarDef
-	forwards		[]string
-	functions		map[string]*Function
+	typedefs  []TypeDef
+	constdefs []ConstDef
+	vardefs   []VarDef
+	forwards  []string
+	functions map[string]*Function
 }
 
-type ConstDef struct{
-	name 		string
-	ccode 		string
-	ctype		string
+type ConstDef struct {
+	name  string
+	ccode string
+	ctype string
 }
 
 type VarDef struct {
-	name		string
-	ccode 		string
-	ctype		string
+	name  string
+	ccode string
+	ctype string
 }
 
 type TypeDef struct {
-	originalName	string
-	packageName		string
-	name 			string
-	ccode 			string
-	dependencies 	[]string
-	defType			string // struct, map, whatever this typedef represents
-						   // used for forwards	
+	originalName string
+	packageName  string
+	name         string
+	ccode        string
+	dependencies []string
+	defType      string // struct, map, whatever this typedef represents
+	// used for forwards
 }
 
-type Function struct{
-	originalName	string
-	packageName		string
-	name 			string
-	body			string
-	parameters  	[]Parameter
-	returnType		string
+type Function struct {
+	originalName string
+	packageName  string
+	name         string
+	body         string
+	parameters   []Parameter
+	returnType   string
 }
 
 type Parameter struct {
-	name 		string
-	ccode 		string
-	ctype		string
+	name  string
+	ccode string
+	ctype string
 }
 
 func NewCompiler() (compiler *CCompiler) {
 	compiler = &CCompiler{}
 	compiler.ccode = &CCode{}
 	compiler.ccode.functions = make(map[string]*Function)
-	compiler.defStack = append( compiler.defStack, compiler.ccode )
+	compiler.defStack = append(compiler.defStack, compiler.ccode)
 	return
 }
 
@@ -78,39 +78,39 @@ func (c *CCompiler) GetHeaderCode() (header string) {
 	for _, include := range c.includes {
 		header += fmt.Sprintf("#include \"%s\"\n", include)
 	}
-	
+
 	header += "\n\n"
-	
+
 	for _, constDef := range c.ccode.constdefs {
 		header += constDef.ccode + "\n"
 	}
-	
+
 	header += "\n\n"
-	
+
 	for _, varDef := range c.ccode.vardefs {
 		header += varDef.ccode + "\n"
 	}
-	
+
 	header += "\n\n"
-	
+
 	for _, f := range c.ccode.forwards {
 		header += f + ";\n"
 	}
-	
+
 	header += "\n\n"
-	
+
 	//prefix := c.source.Name.Name + package_separator
 	for _, typedef := range c.ccode.typedefs {
-		header += "typedef " + 
-			buildTypeWithVarName( typedef.ccode , 
-				c.source.Name.Name + package_separator + typedef.name) + ";\n"
+		header += "typedef " +
+			buildTypeWithVarName(typedef.ccode,
+				c.source.Name.Name+package_separator+typedef.name) + ";\n"
 	}
-	
+
 	header += "\n\n"
 	for _, funcDef := range c.ccode.functions {
 		header += c.createSignature(funcDef) + ";\n"
 	}
-	
+
 	return
 }
 
@@ -130,12 +130,12 @@ func (c *CCompiler) Compile(source *ast.File) {
 	c.processImplementation()
 }
 
-func (c *CCompiler) pushStack(){
-	c.defStack = append( c.defStack, &CCode{} )
+func (c *CCompiler) pushStack() {
+	c.defStack = append(c.defStack, &CCode{})
 }
 
 func (c *CCompiler) popStack() {
-	if len( c.defStack ) > 0 {
+	if len(c.defStack) > 0 {
 		c.defStack = c.defStack[:len(c.defStack)-1]
 	} else {
 		reportError("Poping empty stack")
@@ -143,14 +143,13 @@ func (c *CCompiler) popStack() {
 }
 
 func (c *CCompiler) getTopOfStack() *CCode {
-	if len( c.defStack ) > 0 {
+	if len(c.defStack) > 0 {
 		return c.defStack[len(c.defStack)-1]
 	} else {
 		reportError("Poping empty stack")
 		return nil
 	}
 }
-
 
 func (c *CCompiler) processImplementation() {
 	for _, _decl := range c.source.Decls {
@@ -173,7 +172,7 @@ func (c *CCompiler) processPrototypes() {
 	c.processDependencies()
 }
 
-func (c *CCompiler) processDeclaration(decl *ast.GenDecl){
+func (c *CCompiler) processDeclaration(decl *ast.GenDecl) {
 	if decl.Tok == token.TYPE {
 		c.processType(decl)
 	} else if decl.Tok == token.IMPORT {
@@ -187,9 +186,9 @@ func (c *CCompiler) processDeclaration(decl *ast.GenDecl){
 	}
 }
 
-func (c *CCompiler) processDependencies(){
+func (c *CCompiler) processDependencies() {
 	var orderedTypedefs []TypeDef
-	removed := map[int] bool {}
+	removed := map[int]bool{}
 	var noTypeAdded bool
 	for !noTypeAdded {
 		noTypeAdded = true
@@ -197,7 +196,7 @@ func (c *CCompiler) processDependencies(){
 			is_removed, ok := removed[index]
 			if !ok || !is_removed {
 				all_deps_in := true
-				for _, dep := range typeDef.dependencies{
+				for _, dep := range typeDef.dependencies {
 					found_dep := false
 					for _, t := range orderedTypedefs {
 						if dep == t.name {
@@ -211,7 +210,7 @@ func (c *CCompiler) processDependencies(){
 					}
 				}
 				if all_deps_in {
-					orderedTypedefs = append( orderedTypedefs, typeDef)
+					orderedTypedefs = append(orderedTypedefs, typeDef)
 					noTypeAdded = false
 					removed[index] = true
 				}
@@ -223,54 +222,54 @@ func (c *CCompiler) processDependencies(){
 		is_removed, ok := removed[index]
 		if !ok || !is_removed {
 			if typeDef.defType == "struct" {
-				
+
 				f := "struct " + prefix + typeDef.name
-				c.ccode.forwards = append( c.ccode.forwards, f )
+				c.ccode.forwards = append(c.ccode.forwards, f)
 			}
-			orderedTypedefs = append( orderedTypedefs, typeDef)
+			orderedTypedefs = append(orderedTypedefs, typeDef)
 		}
 	}
 	c.ccode.typedefs = orderedTypedefs
 }
 
-func getTypeOfVar(decl ast.Expr) string{
+func getTypeOfVar(decl ast.Expr) string {
 	s := reflect.ValueOf(decl).Elem()
 	return fmt.Sprintf("%s", s.Type())
 }
 
-func (c *CCompiler) processConstExpression(decl *ast.GenDecl){
+func (c *CCompiler) processConstExpression(decl *ast.GenDecl) {
 	c.generateDeclaration(*decl)
 }
 
-func (c *CCompiler) processVarExpression(decl *ast.GenDecl){
+func (c *CCompiler) processVarExpression(decl *ast.GenDecl) {
 	c.generateDeclaration(*decl)
 }
 
-func (c *CCompiler) processUnknown(decl ast.Decl){
+func (c *CCompiler) processUnknown(decl ast.Decl) {
 	s := reflect.ValueOf(decl).Elem()
 	typeOfT := s.Type()
 	reportError("Don't know what to do with: %s", typeOfT)
 }
 
-func (c *CCompiler) processImport(decl *ast.GenDecl){
-	
+func (c *CCompiler) processImport(decl *ast.GenDecl) {
+
 }
 
-func (c *CCompiler) processType(tdecl *ast.GenDecl){
-	for _, s := range tdecl.Specs{
+func (c *CCompiler) processType(tdecl *ast.GenDecl) {
+	for _, s := range tdecl.Specs {
 		if typeSpec, isTypeSpec := (s).(*ast.TypeSpec); isTypeSpec {
 			typedef := TypeDef{
-				name:typeSpec.Name.Name, 
-				originalName : typeSpec.Name.Name,
-				packageName : c.source.Name.Name}
+				name:         typeSpec.Name.Name,
+				originalName: typeSpec.Name.Name,
+				packageName:  c.source.Name.Name}
 			typedef.defType = ""
 			c.currentType = &typedef
 			typeName := typeSpec.Name.Name
-			code, ok := c.processTypeExpression( typeSpec.Type)
+			code, ok := c.processTypeExpression(typeSpec.Type)
 			if ok {
 				typedef.name = typeName
-				typedef.ccode =  code
-				c.ccode.typedefs = append( c.ccode.typedefs, typedef) 
+				typedef.ccode = code
+				c.ccode.typedefs = append(c.ccode.typedefs, typedef)
 			}
 			c.currentType = nil
 		} else {
@@ -283,14 +282,14 @@ func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (code string, resu
 	code = ""
 	result = false
 	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
-		code, result = c.processStructType( typeStruct)
+		code, result = c.processStructType(typeStruct)
 	} else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
 		code, result = c.processIdentifier(identExpr)
 	} else if selectorExpr, isSelector := (type_expr).(*ast.SelectorExpr); isSelector {
 		code, result = c.processSelector(selectorExpr)
-	}else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
+	} else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
 		code, result = c.processPointer(starExpr)
-	} else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray{
+	} else if arrayExpr, isArray := (type_expr).(*ast.ArrayType); isArray {
 		code, result = c.processArray(arrayExpr)
 	} else if mapExpr, isMap := (type_expr).(*ast.MapType); isMap {
 		code, result = c.processMap(mapExpr)
@@ -307,14 +306,14 @@ func (c *CCompiler) processMap(mapExpr *ast.MapType) (string, bool) {
 	mapValueCode, okMap := c.processTypeExpression(mapExpr.Value)
 	if okKey && okMap {
 		//mapKeyCode = getMapTypeKeyword(  mapKeyCode )
-		mapValueCode = getMapTypeKeyword(  mapValueCode )
+		mapValueCode = getMapTypeKeyword(mapValueCode)
 		return fmt.Sprintf("Go%sMap", mapValueCode), true
 	}
 	return "", false
 }
 
-func getMapTypeKeyword(typeName string) string{
-	if typeName == "GoInt_" || typeName == "GoUint_" || 
+func getMapTypeKeyword(typeName string) string {
+	if typeName == "GoInt_" || typeName == "GoUint_" ||
 		typeName == "GoInt16_" || typeName == "GoUint16_" ||
 		typeName == "GoInt32_" || typeName == "GoUint32_" ||
 		typeName == "GoInt64_" || typeName == "GoUint64_" {
@@ -349,7 +348,7 @@ func (c *CCompiler) processIntegerConstExpression(expr ast.Expr, isForArray bool
 		c_code, ok := c.processIntegerConstExpression(parensExpr.X, isForArray)
 		if ok {
 			return "(" + c_code + ")", true
-		} 
+		}
 	} else if identExpr, isIdent := (expr).(*ast.Ident); isIdent {
 		//TODO: Check if this an integer constant
 		return identExpr.Name, true
@@ -391,10 +390,10 @@ func (c *CCompiler) processArray(arrayExpr *ast.ArrayType) (string, bool) {
 	}
 	if ok {
 		if arrayExpr.Len == nil {
-			arrayElemCode = c.createTypeDef( arrayElemCode )
+			arrayElemCode = c.createTypeDef(arrayElemCode)
 			return fmt.Sprintf("GoSlice_(%s) ", arrayElemCode), true
 		} else {
-			result := buildTypeWithVarName(arrayElemCode,  fmt.Sprintf("[[[__]]][%s]", arrayLenCode))
+			result := buildTypeWithVarName(arrayElemCode, fmt.Sprintf("[[[__]]][%s]", arrayLenCode))
 			return result, true
 		}
 	}
@@ -428,8 +427,8 @@ func (c *CCompiler) processIdentifier(identExpr *ast.Ident) (string, bool) {
 	} else {
 		//Asume type from current package
 		if c.currentType != nil {
-			c.currentType.dependencies = append( c.currentType.dependencies, 
-				type_code )
+			c.currentType.dependencies = append(c.currentType.dependencies,
+				type_code)
 		}
 		return c.source.Name.Name + package_separator + type_code, true
 	}
@@ -437,18 +436,18 @@ func (c *CCompiler) processIdentifier(identExpr *ast.Ident) (string, bool) {
 
 func (c *CCompiler) processStructType(typeStruct *ast.StructType) (string, bool) {
 	c_code := "struct{\n"
-	for _, field := range typeStruct.Fields.List{
+	for _, field := range typeStruct.Fields.List {
 		var names []string
-		for _, fieldName := range field.Names{
-			names = append( names, fieldName.Name )
+		for _, fieldName := range field.Names {
+			names = append(names, fieldName.Name)
 		}
 		if len(names) == 0 {
-			names = append( names, "_unnamed")
+			names = append(names, "_unnamed")
 		}
-		for _, fieldName := range names{
+		for _, fieldName := range names {
 			code, ok := c.processTypeExpression(field.Type)
 			if ok {
-				c_code += buildTypeWithVarName( code , fieldName) + ";\n"
+				c_code += buildTypeWithVarName(code, fieldName) + ";\n"
 			} else {
 				reportError("Couldn't process %s", field.Type)
 			}
@@ -461,35 +460,35 @@ func (c *CCompiler) processStructType(typeStruct *ast.StructType) (string, bool)
 	return c_code, true
 }
 
-func (c *CCompiler) createIdent(prefix string) string{
+func (c *CCompiler) createIdent(prefix string) string {
 	c.identsCount++
 	return fmt.Sprintf("%s%d", prefix, c.identsCount)
 }
 
-func (c *CCompiler) createTypeDef(typeDefinition string) string{
+func (c *CCompiler) createTypeDef(typeDefinition string) string {
 	if !isComplexType(typeDefinition) {
 		return typeDefinition
 	} else {
 		prefix := c.source.Name.Name + package_separator
-	
+
 		for _, typedef := range c.ccode.typedefs {
 			if typedef.ccode == typeDefinition {
 				return prefix + typedef.name
 			}
 		}
-		
+
 		typeName := c.createIdent("_typeIdent")
-		typedef := TypeDef{name: typeName, ccode : typeDefinition}
-		c.ccode.typedefs = append( c.ccode.typedefs, typedef)
+		typedef := TypeDef{name: typeName, ccode: typeDefinition}
+		c.ccode.typedefs = append(c.ccode.typedefs, typedef)
 		return prefix + typedef.name
 	}
-	
+
 }
 
-func (c *CCompiler) processFunctionBody(fdecl *ast.FuncDecl){
+func (c *CCompiler) processFunctionBody(fdecl *ast.FuncDecl) {
 	packageName := c.source.Name.Name
 	funcName := fdecl.Name.Name
-	function, found := c.ccode.functions[packageName + "." + funcName]
+	function, found := c.ccode.functions[packageName+"."+funcName]
 	if found {
 		function.body = c.generateBody(function, fdecl.Body)
 	} else {
@@ -497,31 +496,31 @@ func (c *CCompiler) processFunctionBody(fdecl *ast.FuncDecl){
 	}
 }
 
-func (c *CCompiler) processFunctionPrototype(fdecl *ast.FuncDecl){
+func (c *CCompiler) processFunctionPrototype(fdecl *ast.FuncDecl) {
 	prefix := c.source.Name.Name + package_separator
 	funcName := fdecl.Name.Name
 	receiver := c.getFuncReceiverParam(fdecl)
 	var parameters []Parameter
 	if receiver != nil {
-		parameters = append( parameters, *receiver )
+		parameters = append(parameters, *receiver)
 		recType := receiver.ctype
-		if strings.HasSuffix(recType, "*"){
+		if strings.HasSuffix(recType, "*") {
 			recType = recType[:len(recType)-1]
 		}
 		funcName = recType + "_" + funcName
 	}
 	funcName = prefix + funcName
-	f := Function{name: funcName, 
-				originalName : fdecl.Name.Name, 
-				packageName : c.source.Name.Name}
-	parameters = append( parameters, c.getFuncParams(fdecl)... )
+	f := Function{name: funcName,
+		originalName: fdecl.Name.Name,
+		packageName:  c.source.Name.Name}
+	parameters = append(parameters, c.getFuncParams(fdecl)...)
 	resultType := c.getFuncResultType(fdecl)
 	f.parameters = parameters
 	f.returnType = resultType
-	c.ccode.functions[f.packageName + "." + f.originalName] = &f 
+	c.ccode.functions[f.packageName+"."+f.originalName] = &f
 }
 
-func (c* CCompiler) getFuncReceiverParam(fdecl *ast.FuncDecl) *Parameter {
+func (c *CCompiler) getFuncReceiverParam(fdecl *ast.FuncDecl) *Parameter {
 	if receiver := fdecl.Recv; receiver != nil {
 		_type := &receiver.List[0].Type
 		typeName := ""
@@ -540,34 +539,34 @@ func (c* CCompiler) getFuncReceiverParam(fdecl *ast.FuncDecl) *Parameter {
 		}
 		prefix := c.source.Name.Name + package_separator
 		ccode := prefix + typeName + " " + recvParamName
-		p := Parameter{name : recvParamName, ccode : ccode, ctype : typeName}
+		p := Parameter{name: recvParamName, ccode: ccode, ctype: typeName}
 		return &p
 	}
 	return nil
 }
 
-func (c *CCompiler) getFuncParams(fdecl *ast.FuncDecl) (parameters []Parameter){
+func (c *CCompiler) getFuncParams(fdecl *ast.FuncDecl) (parameters []Parameter) {
 	for index, param := range fdecl.Type.Params.List {
-		typeCode, ok := c.processTypeExpression( param.Type )
+		typeCode, ok := c.processTypeExpression(param.Type)
 		if ok {
-			if isComplexTypeForArgument(typeCode){
+			if isComplexTypeForArgument(typeCode) {
 				typeCode = c.createTypeDef(typeCode)
 			}
 			var names []string
 			for _, name := range param.Names {
-				names = append( names, name.Name )
+				names = append(names, name.Name)
 			}
 			if len(names) == 0 {
-				names = append( names, c.createIdent("_param") )
+				names = append(names, c.createIdent("_param"))
 			}
 			for _, name := range names {
-				p := Parameter{name : name}
-				p.ccode = buildTypeWithVarName( typeCode , name )
-				p.ctype = buildTypeWithVarName( typeCode , "" )
-				parameters = append( parameters, p)
+				p := Parameter{name: name}
+				p.ccode = buildTypeWithVarName(typeCode, name)
+				p.ctype = buildTypeWithVarName(typeCode, "")
+				parameters = append(parameters, p)
 			}
 		} else {
-			reportError("Couldn't process parameter %d in function %s", index + 1, fdecl.Name.Name)
+			reportError("Couldn't process parameter %d in function %s", index+1, fdecl.Name.Name)
 		}
 	}
 	return
@@ -579,23 +578,23 @@ func (c *CCompiler) getFuncResultType(fdecl *ast.FuncDecl) (r string) {
 	var ok bool
 	if fdecl.Type.Results != nil {
 		for index, param := range fdecl.Type.Results.List {
-			typeCode, ok = c.processTypeExpression( param.Type )
+			typeCode, ok = c.processTypeExpression(param.Type)
 			if ok {
-				if isComplexTypeForArgument(typeCode){
+				if isComplexTypeForArgument(typeCode) {
 					typeCode = c.createTypeDef(typeCode)
 				}
 				var names []string
 				for _, name := range param.Names {
-					names = append( names, name.Name )
+					names = append(names, name.Name)
 				}
 				if len(names) == 0 {
-					names = append( names, c.createIdent("_result") )
+					names = append(names, c.createIdent("_result"))
 				}
 				for _, name := range names {
-					p := Parameter{name : name}
-					p.ccode = buildTypeWithVarName( typeCode , name )
-					p.ctype = buildTypeWithVarName( typeCode , "" )
-					parameters = append( parameters, p)
+					p := Parameter{name: name}
+					p.ccode = buildTypeWithVarName(typeCode, name)
+					p.ctype = buildTypeWithVarName(typeCode, "")
+					parameters = append(parameters, p)
 				}
 			} else {
 				reportError("Couldn't process return parameter %d in function %s", index, fdecl.Name.Name)
@@ -604,7 +603,7 @@ func (c *CCompiler) getFuncResultType(fdecl *ast.FuncDecl) (r string) {
 	}
 	if len(parameters) == 0 {
 		r = "void"
-	} else if len(parameters) == 1{
+	} else if len(parameters) == 1 {
 		r = typeCode
 	} else {
 		r = "struct{\n"
@@ -614,44 +613,23 @@ func (c *CCompiler) getFuncResultType(fdecl *ast.FuncDecl) (r string) {
 		r += "}\n"
 		r = c.createTypeDef(r)
 	}
-	return 
+	return
 }
 
-/* Returns the corresponding C type for a GO type*/
-func GetCTypeFromGoType(goType string) (string, bool) {
-	if val, ok := basicTypesMap[goType]; ok {
-		return val, true
-	} else {
-		return goType, false
-	}
-}
-
-func IsBasicGoType(goType string) bool {
-	if _, ok := basicTypesMap[goType]; ok {
-		return true
-	} else {
-		return false
-	}
-}
-
-func GetBasicTypes() map[string]string{
-	return basicTypesMap
-}
-
-func isComplexType(typeDefinition string) bool{
-	return strings.Index(typeDefinition, "*") >= 0 || 
+func isComplexType(typeDefinition string) bool {
+	return strings.Index(typeDefinition, "*") >= 0 ||
 		strings.Index(typeDefinition, "{") >= 0 ||
 		strings.Index(typeDefinition, "[") >= 0 ||
-		strings.Index(typeDefinition, "(") >= 0 
+		strings.Index(typeDefinition, "(") >= 0
 }
 
-func isComplexTypeForArgument(typeDefinition string) bool{
+func isComplexTypeForArgument(typeDefinition string) bool {
 	return strings.Index(typeDefinition, "{") >= 0 ||
-		strings.Index(typeDefinition, "(") >= 0 
+		strings.Index(typeDefinition, "(") >= 0
 }
 
 func (c *CCompiler) findFunction(name string, packageName string) *Function {
-	for i := len(c.defStack) - 1; i >=0; i-- {
+	for i := len(c.defStack) - 1; i >= 0; i-- {
 		def := c.defStack[i]
 		for _, f := range def.functions {
 			if f.originalName == name && packageName == "" {
@@ -673,7 +651,7 @@ func (c *CCompiler) findFunction(name string, packageName string) *Function {
 }
 
 func (c *CCompiler) findConst(name string, packageName string) *ConstDef {
-	for i := len(c.defStack) - 1; i >=0; i-- {
+	for i := len(c.defStack) - 1; i >= 0; i-- {
 		def := c.defStack[i]
 		for _, c := range def.constdefs {
 			if c.name == name {
@@ -695,7 +673,7 @@ func (c *CCompiler) findConst(name string, packageName string) *ConstDef {
 }
 
 func (c *CCompiler) findVar(name string, packageName string) *VarDef {
-	for i := len(c.defStack) - 1; i >=0; i-- {
+	for i := len(c.defStack) - 1; i >= 0; i-- {
 		def := c.defStack[i]
 		for _, c := range def.vardefs {
 			if c.name == name {
@@ -716,33 +694,10 @@ func (c *CCompiler) findVar(name string, packageName string) *VarDef {
 	return nil
 }
 
-func buildTypeWithVarName(typedef string, varname string) string{
+func buildTypeWithVarName(typedef string, varname string) string {
 	if strings.Index(typedef, "[[[__]]]") >= 0 {
 		return strings.Replace(typedef, "[[[__]]]", varname, -1)
 	} else {
 		return typedef + " " + varname
 	}
 }
-
-var basicTypesMap = map[string]string{
-	  "int": "GoInt_",
-	  "uint": "GoUint_",
-	  "int8": "GoInt8_",
-	  "int16": "GoInt16_",
-	  "int32": "GoInt32_",
-	  "int64": "GoInt64_",
-	  "byte": "GoUint8_",
-	  "uint8": "GoUint8_",
-	  "uint16": "GoUint16_",
-	  "uint32": "GoUint32_",
-	  "uint64": "GoUint64_",
-	  "float32" : "GoFloat32_",
-	  "float64" : "GoFloat64_",
-	  "complex64" : "GoComplex64_",
-	  "complex128" : "GoComplex128_",
-	  "string" : "GoString_",
-	  "bool" : "bool",
-	  "error" : "GoInt32_",
-	}
-
-var package_separator = "__"
