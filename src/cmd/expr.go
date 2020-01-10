@@ -189,11 +189,10 @@ func (c *CCompiler) generateCompositeLiteral(compLit ast.CompositeLit) (code str
 	} else {
 		var initializers []string
 		for _, expr := range compLit.Elts {
-			codeExpr, typeExprValue, okExpr := c.generateExpression(expr)
+			codeExpr, _, okExpr := c.generateExpression(expr)
 			if okExpr {
 				if !okType {
 					okType = true
-					typeExpr = typeExprValue
 				}
 				initializers = append(initializers, codeExpr)
 			} else {

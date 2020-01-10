@@ -19,10 +19,6 @@ func (c *CCompiler) createSignature(f *Function) string {
 	return signature
 }
 
-func (c *CCompiler) generateBody(f *Function, block *ast.BlockStmt) string {
-	return c.generateBlock(block)
-}
-
 func (c *CCompiler) generateBlock(block *ast.BlockStmt) (code string) {
 	code = "{\n"
 	c.pushStack()
@@ -95,7 +91,7 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) (code string) {
 					}
 				}
 				if ntok && valueok {
-					if tc == "GoUint32_" || tc == "GoFloat32_" ||
+					if tc == "GoUint32_" ||
 						tc == "GoUint64_" ||
 						tc == "GoFloat32_" || tc == "GoInt32_" ||
 						tc == "GoInt64_" || tc == "GoString_" {
