@@ -1,24 +1,12 @@
 package main
 
 import (
-	"flag"
 	"fmt"
-	"os"
 	"io"
-	"strings"
+	"os"
 )
 
-func main(){
-	var path string
-	flag.StringVar(&path, "i", "", "PATH to source file")
-	flag.Parse()
-	fmt.Println(path)
-	dest := strings.Replace(path, "./", "", -1)
-	dest = strings.Replace(dest, "/", ".", -1)
-	copyFile(path, "../../test/" + dest)
-}
-
-func copyFile(source string, dest string){
+func copyFile(source string, dest string) {
 	sf, err := os.Open(source)
 	check(err)
 	defer sf.Close()
@@ -29,9 +17,3 @@ func copyFile(source string, dest string){
 	df.Sync()
 }
 
-func check(err error) {
-    if err != nil {
-		fmt.Println(err)
-		os.Exit(0)
-	}
-}
