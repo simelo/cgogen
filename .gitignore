@@ -17,4 +17,10 @@ build/*
 *.h
 src/cmd/tests/*
 
+#Files trash the Dolphin (KDE)
+.directory
 
+# IDE
+.idea
+.vscode
+.history
