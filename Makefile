@@ -18,8 +18,9 @@ run:      ## Run the skycoin node. To add arguments, do 'make ARGS="--foo" run'.
 	go run src/cmd/cgogen.go ${ARGS}
 
 lint: ## Run linters. Use make install-linters first.
-#	vendorcheck $(REPO_ROOT)/...
+	vendorcheck $(REPO_ROOT)/...
 	# src/cmd needs separate linting rules
+	ls -oa $(REPO_ROOT)src/cmd
 	golangci-lint run -c .golangci.yml $(REPO_ROOT)src/cmd/...
 
 install-linters: ## Install linters
