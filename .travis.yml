@@ -1,9 +1,13 @@
 sudo: required
 language: go
+go:
+  - "1.11.x"
 matrix:
   include:
     - os: linux
+      dist: xenial
     - os: osx
+      osx_image: xcode8
 
 install:
   # Install gox
