@@ -19,10 +19,6 @@ func (c *CCompiler) createSignature(f *Function) string {
 	return signature
 }
 
-func (c *CCompiler) generateBody(f *Function, block *ast.BlockStmt) string {
-	return c.generateBlock(block)
-}
-
 func (c *CCompiler) generateBlock(block *ast.BlockStmt) (code string) {
 	code = "{\n"
 	c.pushStack()

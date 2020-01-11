@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+
 	//"go/ast"
 	"go/parser"
 	"go/token"
@@ -15,14 +16,16 @@ func Full_Transpile(sourcedir string, outdir string) {
 	applog("Processing dir %s", sourcedir)
 	compilers := make(map[string]*CCompiler)
 	fset := token.NewFileSet()
-	traverseDir(sourcedir, func(file string) error {
-		fo, err := os.Open(file)
+	err := traverseDir(sourcedir, func(file string) error {
+
+		fo, err := os.Open(file) //nolint gosec
 		applog("opening %s", file)
 		if err != nil {
 			reportError("error: %v", err)
 			return err
 		}
-		defer fo.Close()
+		err = fo.Close()
+		check(err)
 		fast, err := parser.ParseFile(fset, "", fo, parser.AllErrors|parser.ParseComments)
 		if err == nil {
 			packName := fast.Name.Name
@@ -38,6 +41,7 @@ func Full_Transpile(sourcedir string, outdir string) {
 		}
 		return nil
 	})
+	check(err)
 	generateCode(compilers, outdir)
 }
 
@@ -57,9 +61,10 @@ func generateCode(compilers map[string]*CCompiler, outdir string) {
 }
 
 func cleanDir(dir string) {
-	traverseDir(dir, func(file string) error {
+	err := traverseDir(dir, func(file string) error {
 		return os.RemoveAll(file)
 	})
+	check(err)
 }
 
 func traverseDir(sourcedir string, callback func(file string) error) error {
@@ -72,7 +77,8 @@ func traverseDir(sourcedir string, callback func(file string) error) error {
 			name := f.Name()
 			if strings.HasSuffix(name, ".go") {
 				path := filepath.Join(sourcedir, name)
-				callback(path)
+				err = callback(path)
+				check(err)
 			}
 		}
 	}
@@ -82,9 +88,12 @@ func traverseDir(sourcedir string, callback func(file string) error) error {
 func saveToFile(fileName string, text string) {
 	f, err := os.Create(fileName)
 	check(err)
-	defer f.Close()
-	f.WriteString(text)
-	f.Sync()
+	err = f.Close()
+	check(err)
+	_, err = f.WriteString(text)
+	check(err)
+	err = f.Sync()
+	check(err)
 }
 
 func copyFile(source string, dest string) {
