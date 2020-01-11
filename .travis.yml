@@ -11,11 +11,13 @@ matrix:
 
 install:
   # Install gox
+  - go get github.com/mitchellh/gox
   - go get -t ./...
   - make install-linters
 script:
-  - make build
   - make lint
+  - make build
+
 
 notifications:
   email: false
