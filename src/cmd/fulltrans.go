@@ -85,8 +85,10 @@ func saveToFile(fileName string, text string) {
 	f, err := os.Create(fileName)
 	check(err)
 	defer f.Close()
-	f.WriteString(text)
-	f.Sync()
+	_, err = f.WriteString(text)
+	check(err)
+	err = f.Sync()
+	check(err)
 }
 
 // nolint unused

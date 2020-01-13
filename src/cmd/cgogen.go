@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/dave/jennifer/jen"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/dave/jennifer/jen"
 )
 
 type Config struct {
@@ -143,7 +144,6 @@ func doGoFile() {
 	}
 
 	var outFile *jen.File
-	outFile = nil
 
 	if cfg.ProcessFunctions {
 		outFile = jen.NewFile("main")
@@ -164,7 +164,6 @@ func doGoFile() {
 			if decl, ok := (_decl).(*ast.FuncDecl); ok {
 
 				var plist *[]string
-				plist = nil
 				if cfg.ProcessDependencies {
 					plist = &dependantTypes
 				}
@@ -234,16 +233,20 @@ func saveTextToFile(fileName string, text string) {
 	f, err := os.Create(fileName)
 	check(err)
 	defer f.Close()
-	f.WriteString(text)
-	f.Sync()
+	_, err = f.WriteString(text)
+	check(err)
+	err = f.Sync()
+	check(err)
 }
 
 func saveDependencyFile(path string, list []string, separator string) {
 	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
-	f.WriteString(strings.Join(list, separator))
-	f.Sync()
+	_, err = f.WriteString(strings.Join(list, separator))
+	check(err)
+	err = f.Sync()
+	check(err)
 }
 
 func loadDependencyFile(path string, separator string) (list []string) {
@@ -251,7 +254,8 @@ func loadDependencyFile(path string, separator string) (list []string) {
 	if err == nil {
 		defer f.Close()
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(f)
+		_, err = buf.ReadFrom(f)
+		check(err)
 		contents := buf.String()
 		tlist := strings.Split(contents, separator)
 		for _, str := range tlist {
@@ -268,7 +272,7 @@ func loadDependencyFile(path string, separator string) (list []string) {
 func check(err error) {
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(0)
+		os.Exit(1)
 	}
 }
 
@@ -284,12 +288,10 @@ func findImportPath(importName string) (string, bool) {
 				name := ""
 				path := importSpec.Path.Value
 
-				if strings.HasPrefix(path, "\"") {
-					path = path[1:]
-				}
-				if strings.HasSuffix(path, "\"") {
-					path = path[:len(path)-1]
-				}
+				path = strings.TrimPrefix(path, "\"")
+
+				path = strings.TrimSuffix(path, "\"")
+
 				if importSpec.Name != nil {
 					name = importSpec.Name.Name
 				} else {
@@ -310,7 +312,7 @@ func findImportPath(importName string) (string, bool) {
 func isSkycoinName(importName string) bool {
 	path, result := findImportPath(importName)
 	if result {
-		return strings.HasPrefix(path, "github.com/SkycoinProject/")
+		return strings.HasPrefix(path, "github.com/SkycoinProject")
 	} else {
 		return false
 	}
@@ -456,14 +458,6 @@ func isInHandleTypesList(typeName string) bool {
 func isInCustomTypesList(typeName string) bool {
 	_, ok := customTypesMap[typeName]
 	return ok
-}
-
-func firstCharToUpper(s string) string {
-	if len(s) > 0 {
-		return strings.ToUpper(s[0:1]) + s[1:]
-	} else {
-		return s
-	}
 }
 
 func getHandleName(typeName string) string {
@@ -632,7 +626,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	}
 
 	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
-	stmt := outFile.Comment("export " + cfuncName)
+	stmt := outFile.Comment("export " + cfuncName) //nolint staticcheck
 	stmt = outFile.Func().Id(cfuncName)
 	stmt = stmt.Params(params...)
 
@@ -701,7 +695,7 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool {
 		return false
 	}
 	//Do not allow extern types in function parameters
-	if strings.Index(typeSpec, "C._") >= 0 {
+	if strings.Contains(typeSpec, "C._") {
 		return true
 	}
 	for _, t := range *dependant_list {
@@ -713,6 +707,7 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool {
 }
 
 //Creates code to make a typecast
+//nolint unparam
 func getTypeCastCode(leftPart *jen.Statement, typeExpr *ast.Expr,
 	packName string, name string, outFile *jen.File) jen.Code {
 	if identExpr, isIdent := (*typeExpr).(*ast.Ident); isIdent {
@@ -743,8 +738,7 @@ func getLookupHandleCode(name string, typeName string, isPointer bool) []jen.Cod
 		varname = "__" + name
 	}
 	listVar := jen.List(jen.Id(varname), jen.Id("ok"+name)).Op(":=")
-	var lookUpName string
-	lookUpName = "lookup" + handleTypes[typeName] + "Handle"
+	lookUpName := "lookup" + handleTypes[typeName] + "Handle"
 	listVar = listVar.Id(lookUpName).Call(jen.Op("*").Id(argName(name)))
 	checkError := jen.If(jen.Op("!").Id("ok"+name)).
 		Block(jen.Id(returnVarName).Op("=").Id("SKY_BAD_HANDLE"), jen.Return())
@@ -938,14 +932,7 @@ func isInplaceConvertType(typeName string) bool {
 
 }
 
-func getInplaceConvertTypePackage(typeName string) string {
-	if val, ok := inplaceConvertTypesPackages[typeName]; ok {
-		return val
-	}
-	return "null"
-}
-
-/* Process a type expression. Returns the code in C for the type and ok if successfull */
+/* Process a type expression. Returns the code in C for the type and ok if successful */
 func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 	packageName string, name string,
 	definedTypes *[]string,
@@ -1198,7 +1185,7 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *[]string) string {
 	result_code := ""
 	var defined_types []string
-	for key, _ := range GetBasicTypes() {
+	for key := range GetBasicTypes() {
 		ctype, ok := GetCTypeFromGoType(key)
 		if ok {
 			defined_types = append(defined_types, ctype)
@@ -1246,16 +1233,22 @@ func fixExportComment(filePath string) {
 	f, err := os.Open(filePath)
 	check(err)
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(f)
+	_, err = buf.ReadFrom(f)
+	check(err)
+
 	contents := buf.String()
-	f.Close()
+	err = f.Close()
+	check(err)
 
 	contents = strings.Replace(contents, "// export SKY_", "//export SKY_", -1)
 	f, err = os.Create(filePath)
 	check(err)
-	f.WriteString(contents)
-	f.Sync()
-	f.Close()
+	_, err = f.WriteString(contents)
+	check(err)
+	err = f.Sync()
+	check(err)
+	err = f.Close()
+	check(err)
 }
 
 func processTypeSetting(comment string) {
