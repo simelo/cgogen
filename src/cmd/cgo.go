@@ -490,7 +490,7 @@ func (c *CCompiler) processFunctionBody(fdecl *ast.FuncDecl) {
 	funcName := fdecl.Name.Name
 	function, found := c.ccode.functions[packageName+"."+funcName]
 	if found {
-		function.body = c.generateBody(function, fdecl.Body)
+		function.body = c.generateBlock(fdecl.Body)
 	} else {
 		reportError("Function name %s.%s not found to generate body", packageName, funcName)
 	}
