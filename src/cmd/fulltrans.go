@@ -1,12 +1,11 @@
 package main
 
 import (
+	"go/parser"
+	"go/token"
 	"io"
 	"io/ioutil"
 	"os"
-	//"go/ast"
-	"go/parser"
-	"go/token"
 	"path/filepath"
 	"strings"
 )
@@ -15,7 +14,7 @@ func Full_Transpile(sourcedir string, outdir string) {
 	applog("Processing dir %s", sourcedir)
 	compilers := make(map[string]*CCompiler)
 	fset := token.NewFileSet()
-	traverseDir(sourcedir, func(file string) error {
+	err := traverseDir(sourcedir, func(file string) error {
 		fo, err := os.Open(file)
 		applog("opening %s", file)
 		if err != nil {
@@ -38,6 +37,7 @@ func Full_Transpile(sourcedir string, outdir string) {
 		}
 		return nil
 	})
+	check(err)
 	generateCode(compilers, outdir)
 }
 
@@ -57,9 +57,10 @@ func generateCode(compilers map[string]*CCompiler, outdir string) {
 }
 
 func cleanDir(dir string) {
-	traverseDir(dir, func(file string) error {
+	err := traverseDir(dir, func(file string) error {
 		return os.RemoveAll(file)
 	})
+	check(err)
 }
 
 func traverseDir(sourcedir string, callback func(file string) error) error {
@@ -72,7 +73,8 @@ func traverseDir(sourcedir string, callback func(file string) error) error {
 			name := f.Name()
 			if strings.HasSuffix(name, ".go") {
 				path := filepath.Join(sourcedir, name)
-				callback(path)
+				err = callback(path)
+				check(err)
 			}
 		}
 	}
@@ -86,6 +88,7 @@ func saveToFile(fileName string, text string) {
 	f.WriteString(text)
 	f.Sync()
 }
+
 // nolint unused
 func copyFile(source string, dest string) {
 	sf, err := os.Open(source)
