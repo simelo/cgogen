@@ -11,8 +11,6 @@ import (
 	"log"
 	"os"
 	"strings"
-
-	"github.com/dave/jennifer/jen"
 )
 
 type Config struct {
@@ -64,7 +62,6 @@ var (
 var customTypesMap = make(map[string]string)
 
 //Types that will use functions of type inplace to convert
-// nolint varcheck
 var inplaceConvertTypesPackages = map[string]string{
 	"PubKeySlice":   "cipher",
 	"Address":       "cipher",
@@ -72,10 +69,6 @@ var inplaceConvertTypesPackages = map[string]string{
 }
 
 var mainPackagePath = string("github.com/SkycoinProject/skycoin/src/")
-var mainPackagePath = string("github.com/skycoin/skycoin/src/")
-
-/*
-
 
 var arrayTypes = map[string]string{
 	"PubKey":    "cipher",
@@ -134,8 +127,7 @@ func doGoFile() {
 	fo, err := os.Open(cfg.Path)
 	check(err)
 
-	err = fo.Close()
-	check(err)
+	defer fo.Close()
 
 	fset := token.NewFileSet()
 	fast, err := parser.ParseFile(fset, "", fo, parser.AllErrors|parser.ParseComments)
@@ -151,6 +143,7 @@ func doGoFile() {
 	}
 
 	var outFile *jen.File
+	outFile = nil
 
 	if cfg.ProcessFunctions {
 		outFile = jen.NewFile("main")
@@ -171,6 +164,7 @@ func doGoFile() {
 			if decl, ok := (_decl).(*ast.FuncDecl); ok {
 
 				var plist *[]string
+				plist = nil
 				if cfg.ProcessDependencies {
 					plist = &dependantTypes
 				}
@@ -239,40 +233,33 @@ func doFullTranspile() {
 func saveTextToFile(fileName string, text string) {
 	f, err := os.Create(fileName)
 	check(err)
-	err = f.Close()
-	check(err)
-	_, err = f.WriteString(text)
-	check(err)
-	err = f.Sync()
-	check(err)
+	defer f.Close()
+	f.WriteString(text)
+	f.Sync()
 }
 
 func saveDependencyFile(path string, list []string, separator string) {
 	f, err := os.Create(path)
 	check(err)
-	err = f.Close()
-	check(err)
-	_, err = f.WriteString(strings.Join(list, separator))
-	check(err)
-	err = f.Sync()
-	check(err)
+	defer f.Close()
+	f.WriteString(strings.Join(list, separator))
+	f.Sync()
 }
 
 func loadDependencyFile(path string, separator string) (list []string) {
-	f, err := os.Open(path) //nolint gosec
-	check(err)
-	err = f.Close()
-	check(err)
-	buf := new(bytes.Buffer)
-	_, err = buf.ReadFrom(f)
-	check(err)
-	contents := buf.String()
-	tlist := strings.Split(contents, separator)
-	for _, str := range tlist {
-		nstr := strings.Replace(str, "\r", "", -1)
-		nstr = strings.Replace(nstr, "\n", "", -1)
-		if nstr != "" {
-			list = append(list, nstr)
+	f, err := os.Open(path)
+	if err == nil {
+		defer f.Close()
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(f)
+		contents := buf.String()
+		tlist := strings.Split(contents, separator)
+		for _, str := range tlist {
+			nstr := strings.Replace(str, "\r", "", -1)
+			nstr = strings.Replace(nstr, "\n", "", -1)
+			if nstr != "" {
+				list = append(list, nstr)
+			}
 		}
 	}
 	return
@@ -296,7 +283,13 @@ func findImportPath(importName string) (string, bool) {
 			if importSpec, isImportSpec := (s).(*ast.ImportSpec); isImportSpec {
 				name := ""
 				path := importSpec.Path.Value
-				path = strings.TrimPrefix(path, "\"")
+
+				if strings.HasPrefix(path, "\"") {
+					path = path[1:]
+				}
+				if strings.HasSuffix(path, "\"") {
+					path = path[:len(path)-1]
+				}
 				if importSpec.Name != nil {
 					name = importSpec.Name.Name
 				} else {
@@ -465,6 +458,14 @@ func isInCustomTypesList(typeName string) bool {
 	return ok
 }
 
+func firstCharToUpper(s string) string {
+	if len(s) > 0 {
+		return strings.ToUpper(s[0:1]) + s[1:]
+	} else {
+		return s
+	}
+}
+
 func getHandleName(typeName string) string {
 	return "*C." + handleTypes[typeName] + packageSeparator + "Handle"
 }
@@ -631,7 +632,8 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 	}
 
 	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
-	stmt := outFile.Func().Id(cfuncName)
+	stmt := outFile.Comment("export " + cfuncName)
+	stmt = outFile.Func().Id(cfuncName)
 	stmt = stmt.Params(params...)
 
 	var callparams []jen.Code
@@ -699,7 +701,7 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool {
 		return false
 	}
 	//Do not allow extern types in function parameters
-	if strings.Contains(typeSpec, "C._") {
+	if strings.Index(typeSpec, "C._") >= 0 {
 		return true
 	}
 	for _, t := range *dependant_list {
@@ -711,7 +713,6 @@ func isTypeSpecInDependantList(typeSpec string, dependant_list *[]string) bool {
 }
 
 //Creates code to make a typecast
-// nolint unparam
 func getTypeCastCode(leftPart *jen.Statement, typeExpr *ast.Expr,
 	packName string, name string, outFile *jen.File) jen.Code {
 	if identExpr, isIdent := (*typeExpr).(*ast.Ident); isIdent {
@@ -742,7 +743,8 @@ func getLookupHandleCode(name string, typeName string, isPointer bool) []jen.Cod
 		varname = "__" + name
 	}
 	listVar := jen.List(jen.Id(varname), jen.Id("ok"+name)).Op(":=")
-	lookUpName := "lookup" + handleTypes[typeName] + "Handle"
+	var lookUpName string
+	lookUpName = "lookup" + handleTypes[typeName] + "Handle"
 	listVar = listVar.Id(lookUpName).Call(jen.Op("*").Id(argName(name)))
 	checkError := jen.If(jen.Op("!").Id("ok"+name)).
 		Block(jen.Id(returnVarName).Op("=").Id("SKY_BAD_HANDLE"), jen.Return())
@@ -843,14 +845,14 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 }
 
 /*Returns jen Code to convert an output parameter from original to wrapper function*/
-func getCodeToConvertOutParameter(_typeExpr *ast.Expr, packageName string, name string, isPointer bool) jen.Code {
+func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name string, isPointer bool) jen.Code {
 
 	if _, isArray := (*_typeExpr).(*ast.ArrayType); isArray {
 		return jen.Id("copyToGoSlice").Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name))),
 			jen.Id(name))
 	} else if starExpr, isPointerRecv := (*_typeExpr).(*ast.StarExpr); isPointerRecv {
 		_type := &starExpr.X
-		return getCodeToConvertOutParameter(_type, packageName, name, true)
+		return getCodeToConvertOutParameter(_type, package_name, name, true)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
 		if dealOutStringAsGostring && typeName == "string" {
@@ -864,7 +866,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, packageName string, name 
 			} else {
 				argCode = jen.Op("&").Id(argName(name))
 			}
-			return jen.Op("*").Id(name).Op("=").Id("register" + handleTypes[packageName+packageSeparator+typeName] + "Handle").Call(argCode)
+			return jen.Op("*").Id(name).Op("=").Id("register" + handleTypes[package_name+packageSeparator+typeName] + "Handle").Call(argCode)
 		} else if isSkyArrayType(typeName) {
 			var argCode jen.Code
 			if isPointer {
@@ -885,7 +887,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, packageName string, name 
 				argCode = jen.Op("&").Id(argName(name))
 			}
 			return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
-				Qual("C", packageName+packageSeparator+typeName)).
+				Qual("C", package_name+packageSeparator+typeName)).
 				Parens(jen.Qual("unsafe", "Pointer").Parens(argCode))
 		}
 	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
@@ -936,8 +938,14 @@ func isInplaceConvertType(typeName string) bool {
 
 }
 
-/* Process a type expression. Returns the code in C for the type and ok if successful */
+func getInplaceConvertTypePackage(typeName string) string {
+	if val, ok := inplaceConvertTypesPackages[typeName]; ok {
+		return val
+	}
 	return "null"
+}
+
+/* Process a type expression. Returns the code in C for the type and ok if successfull */
 func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 	packageName string, name string,
 	definedTypes *[]string,
@@ -1190,7 +1198,7 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *[]string) string {
 	result_code := ""
 	var defined_types []string
-	for key := range GetBasicTypes() {
+	for key, _ := range GetBasicTypes() {
 		ctype, ok := GetCTypeFromGoType(key)
 		if ok {
 			defined_types = append(defined_types, ctype)
@@ -1235,24 +1243,19 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 
 //Remove extra space in export indication
 func fixExportComment(filePath string) {
-	f, err := os.Open(filePath) //nolint gosec
+	f, err := os.Open(filePath)
 	check(err)
 	buf := new(bytes.Buffer)
-	_, err = buf.ReadFrom(f)
-	check(err)
+	buf.ReadFrom(f)
 	contents := buf.String()
-	err = f.Close()
-	check(err)
+	f.Close()
 
 	contents = strings.Replace(contents, "// export SKY_", "//export SKY_", -1)
 	f, err = os.Create(filePath)
 	check(err)
-	_, err = f.WriteString(contents)
-	check(err)
-	err = f.Sync()
-	check(err)
-	err = f.Close()
-	check(err)
+	f.WriteString(contents)
+	f.Sync()
+	f.Close()
 }
 
 func processTypeSetting(comment string) {

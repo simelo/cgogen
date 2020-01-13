@@ -103,7 +103,7 @@ func (c *CCompiler) GetHeaderCode() (header string) {
 	for _, typedef := range c.ccode.typedefs {
 		header += "typedef " +
 			buildTypeWithVarName(typedef.ccode,
-				c.source.Name.Name+package_separator+typedef.name) + ";\n"
+				c.source.Name.Name+packageSeparator+typedef.name) + ";\n"
 	}
 
 	header += "\n\n"
@@ -173,8 +173,6 @@ func (c *CCompiler) processPrototypes() {
 }
 
 func (c *CCompiler) processDeclaration(decl *ast.GenDecl) {
-	// TODO: Missing Handle in implementation
-
 	if decl.Tok == token.TYPE {
 		c.processType(decl)
 	} else if decl.Tok == token.IMPORT {
@@ -183,8 +181,9 @@ func (c *CCompiler) processDeclaration(decl *ast.GenDecl) {
 		c.processConstExpression(decl)
 	} else if decl.Tok == token.VAR {
 		c.processVarExpression(decl)
+	} else {
+		//Handle in implementation
 	}
-
 }
 
 func (c *CCompiler) processDependencies() {
@@ -235,7 +234,7 @@ func (c *CCompiler) processDependencies() {
 
 func getTypeOfVar(decl ast.Expr) string {
 	s := reflect.ValueOf(decl).Elem()
-	return s.String()
+	return fmt.Sprintf("%s", s.Type())
 }
 
 func (c *CCompiler) processConstExpression(decl *ast.GenDecl) {
@@ -285,8 +284,7 @@ func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (code string, resu
 	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
 		code, result = c.processStructType(typeStruct)
 	} else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
-		code = c.processIdentifier(identExpr)
-		result = true
+		code, result = c.processIdentifier(identExpr)
 	} else if selectorExpr, isSelector := (type_expr).(*ast.SelectorExpr); isSelector {
 		code, result = c.processSelector(selectorExpr)
 	} else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
@@ -422,17 +420,17 @@ func (c *CCompiler) processSelector(selectorExpr *ast.SelectorExpr) (string, boo
 	}
 }
 
-func (c *CCompiler) processIdentifier(identExpr *ast.Ident) string {
+func (c *CCompiler) processIdentifier(identExpr *ast.Ident) (string, bool) {
 	type_code, isBasic := GetCTypeFromGoType(identExpr.Name)
 	if isBasic {
-		return type_code
+		return type_code, true
 	} else {
 		//Asume type from current package
 		if c.currentType != nil {
 			c.currentType.dependencies = append(c.currentType.dependencies,
 				type_code)
 		}
-		return c.source.Name.Name + package_separator + type_code
+		return c.source.Name.Name + packageSeparator + type_code, true
 	}
 }
 
@@ -492,7 +490,7 @@ func (c *CCompiler) processFunctionBody(fdecl *ast.FuncDecl) {
 	funcName := fdecl.Name.Name
 	function, found := c.ccode.functions[packageName+"."+funcName]
 	if found {
-		function.body = c.generateBlock(fdecl.Body)
+		function.body = c.generateBody(function, fdecl.Body)
 	} else {
 		reportError("Function name %s.%s not found to generate body", packageName, funcName)
 	}
@@ -619,15 +617,15 @@ func (c *CCompiler) getFuncResultType(fdecl *ast.FuncDecl) (r string) {
 }
 
 func isComplexType(typeDefinition string) bool {
-	return strings.Contains(typeDefinition, "*") ||
-		strings.Contains(typeDefinition, "{") ||
-		strings.Contains(typeDefinition, "[") ||
-		strings.Contains(typeDefinition, "(")
+	return strings.Index(typeDefinition, "*") >= 0 ||
+		strings.Index(typeDefinition, "{") >= 0 ||
+		strings.Index(typeDefinition, "[") >= 0 ||
+		strings.Index(typeDefinition, "(") >= 0
 }
 
 func isComplexTypeForArgument(typeDefinition string) bool {
-	return strings.Contains(typeDefinition, "{") ||
-		strings.Contains(typeDefinition, "(")
+	return strings.Index(typeDefinition, "{") >= 0 ||
+		strings.Index(typeDefinition, "(") >= 0
 }
 
 func (c *CCompiler) findFunction(name string, packageName string) *Function {
@@ -697,7 +695,7 @@ func (c *CCompiler) findVar(name string, packageName string) *VarDef {
 }
 
 func buildTypeWithVarName(typedef string, varname string) string {
-	if strings.Contains(typedef, "[[[__]]]") {
+	if strings.Index(typedef, "[[[__]]]") >= 0 {
 		return strings.Replace(typedef, "[[[__]]]", varname, -1)
 	} else {
 		return typedef + " " + varname
