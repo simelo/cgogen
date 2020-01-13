@@ -86,7 +86,7 @@ func saveToFile(fileName string, text string) {
 	f.WriteString(text)
 	f.Sync()
 }
-
+// nolint unused
 func copyFile(source string, dest string) {
 	sf, err := os.Open(source)
 	check(err)
