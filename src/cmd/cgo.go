@@ -172,6 +172,7 @@ func (c *CCompiler) processPrototypes() {
 	c.processDependencies()
 }
 
+// TODO: Not //Handle in implementation
 func (c *CCompiler) processDeclaration(decl *ast.GenDecl) {
 	if decl.Tok == token.TYPE {
 		c.processType(decl)
@@ -181,8 +182,6 @@ func (c *CCompiler) processDeclaration(decl *ast.GenDecl) {
 		c.processConstExpression(decl)
 	} else if decl.Tok == token.VAR {
 		c.processVarExpression(decl)
-	} else {
-		//Handle in implementation
 	}
 }
 
@@ -234,7 +233,7 @@ func (c *CCompiler) processDependencies() {
 
 func getTypeOfVar(decl ast.Expr) string {
 	s := reflect.ValueOf(decl).Elem()
-	return fmt.Sprintf("%s", s.Type())
+	return s.String()
 }
 
 func (c *CCompiler) processConstExpression(decl *ast.GenDecl) {
@@ -284,7 +283,8 @@ func (c *CCompiler) processTypeExpression(type_expr ast.Expr) (code string, resu
 	if typeStruct, isTypeStruct := (type_expr).(*ast.StructType); isTypeStruct {
 		code, result = c.processStructType(typeStruct)
 	} else if identExpr, isIdent := (type_expr).(*ast.Ident); isIdent {
-		code, result = c.processIdentifier(identExpr)
+		code = c.processIdentifier(identExpr)
+		result = true
 	} else if selectorExpr, isSelector := (type_expr).(*ast.SelectorExpr); isSelector {
 		code, result = c.processSelector(selectorExpr)
 	} else if starExpr, isStart := (type_expr).(*ast.StarExpr); isStart {
@@ -420,17 +420,17 @@ func (c *CCompiler) processSelector(selectorExpr *ast.SelectorExpr) (string, boo
 	}
 }
 
-func (c *CCompiler) processIdentifier(identExpr *ast.Ident) (string, bool) {
+func (c *CCompiler) processIdentifier(identExpr *ast.Ident) string {
 	type_code, isBasic := GetCTypeFromGoType(identExpr.Name)
 	if isBasic {
-		return type_code, true
+		return type_code
 	} else {
 		//Asume type from current package
 		if c.currentType != nil {
 			c.currentType.dependencies = append(c.currentType.dependencies,
 				type_code)
 		}
-		return c.source.Name.Name + packageSeparator + type_code, true
+		return c.source.Name.Name + packageSeparator + type_code
 	}
 }
 
@@ -617,15 +617,15 @@ func (c *CCompiler) getFuncResultType(fdecl *ast.FuncDecl) (r string) {
 }
 
 func isComplexType(typeDefinition string) bool {
-	return strings.Index(typeDefinition, "*") >= 0 ||
-		strings.Index(typeDefinition, "{") >= 0 ||
-		strings.Index(typeDefinition, "[") >= 0 ||
-		strings.Index(typeDefinition, "(") >= 0
+	return strings.Contains(typeDefinition, "*") ||
+		strings.Contains(typeDefinition, "{") ||
+		strings.Contains(typeDefinition, "[") ||
+		strings.Contains(typeDefinition, "(")
 }
 
 func isComplexTypeForArgument(typeDefinition string) bool {
-	return strings.Index(typeDefinition, "{") >= 0 ||
-		strings.Index(typeDefinition, "(") >= 0
+	return strings.Contains(typeDefinition, "{") ||
+		strings.Contains(typeDefinition, "(")
 }
 
 func (c *CCompiler) findFunction(name string, packageName string) *Function {
@@ -695,7 +695,7 @@ func (c *CCompiler) findVar(name string, packageName string) *VarDef {
 }
 
 func buildTypeWithVarName(typedef string, varname string) string {
-	if strings.Index(typedef, "[[[__]]]") >= 0 {
+	if strings.Contains(typedef, "[[[__]]]") {
 		return strings.Replace(typedef, "[[[__]]]", varname, -1)
 	} else {
 		return typedef + " " + varname
