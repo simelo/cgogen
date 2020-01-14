@@ -1,12 +1,11 @@
 package main
 
 import (
-	"io/ioutil"
-	"os"
-
-	//"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
+	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -16,15 +15,13 @@ func Full_Transpile(sourcedir string, outdir string) {
 	compilers := make(map[string]*CCompiler)
 	fset := token.NewFileSet()
 	err := traverseDir(sourcedir, func(file string) error {
-
-		fo, err := os.Open(file) //nolint gosec
+		fo, err := os.Open(file)
 		applog("opening %s", file)
 		if err != nil {
 			reportError("error: %v", err)
 			return err
 		}
-		err = fo.Close()
-		check(err)
+		defer fo.Close()
 		fast, err := parser.ParseFile(fset, "", fo, parser.AllErrors|parser.ParseComments)
 		if err == nil {
 			packName := fast.Name.Name
@@ -87,10 +84,21 @@ func traverseDir(sourcedir string, callback func(file string) error) error {
 func saveToFile(fileName string, text string) {
 	f, err := os.Create(fileName)
 	check(err)
-	err = f.Close()
-	check(err)
+	defer f.Close()
 	_, err = f.WriteString(text)
 	check(err)
 	err = f.Sync()
 	check(err)
+}
+
+// nolint unused
+func copyFile(source string, dest string) {
+	sf, err := os.Open(source)
+	check(err)
+	defer sf.Close()
+	df, err := os.Create(dest)
+	check(err)
+	defer df.Close()
+	io.Copy(df, sf)
+	df.Sync()
 }

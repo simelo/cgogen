@@ -91,8 +91,7 @@ func (c *CCompiler) generateConst(decl ast.GenDecl) (code string) {
 					}
 				}
 				if ntok && valueok {
-					if tc == "GoUint32_" ||
-						tc == "GoUint64_" ||
+					if tc == "GoUint32_" || tc == "GoUint64_" ||
 						tc == "GoFloat32_" || tc == "GoInt32_" ||
 						tc == "GoInt64_" || tc == "GoString_" {
 						const_code += "#define " + sname + " " + value + "\n"

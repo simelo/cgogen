@@ -103,7 +103,7 @@ func (c *CCompiler) GetHeaderCode() (header string) {
 	for _, typedef := range c.ccode.typedefs {
 		header += "typedef " +
 			buildTypeWithVarName(typedef.ccode,
-				c.source.Name.Name+package_separator+typedef.name) + ";\n"
+				c.source.Name.Name+packageSeparator+typedef.name) + ";\n"
 	}
 
 	header += "\n\n"
@@ -172,9 +172,8 @@ func (c *CCompiler) processPrototypes() {
 	c.processDependencies()
 }
 
+// TODO: Not //Handle in implementation
 func (c *CCompiler) processDeclaration(decl *ast.GenDecl) {
-	// TODO: Missing Handle in implementation
-
 	if decl.Tok == token.TYPE {
 		c.processType(decl)
 	} else if decl.Tok == token.IMPORT {
@@ -184,7 +183,6 @@ func (c *CCompiler) processDeclaration(decl *ast.GenDecl) {
 	} else if decl.Tok == token.VAR {
 		c.processVarExpression(decl)
 	}
-
 }
 
 func (c *CCompiler) processDependencies() {
@@ -218,7 +216,7 @@ func (c *CCompiler) processDependencies() {
 			}
 		}
 	}
-	prefix := c.source.Name.Name + package_separator
+	prefix := c.source.Name.Name + packageSeparator
 	for index, typeDef := range c.ccode.typedefs {
 		is_removed, ok := removed[index]
 		if !ok || !is_removed {
@@ -358,7 +356,7 @@ func (c *CCompiler) processIntegerConstExpression(expr ast.Expr, isForArray bool
 		//TODO: Check if this an integer constant
 		identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
 		if isIdent {
-			return identExpr.Name + package_separator + selectorExpr.Sel.Name, true
+			return identExpr.Name + packageSeparator + selectorExpr.Sel.Name, true
 		} else {
 			if isForArray {
 				reportError("Selector with complex expression in array length")
@@ -415,7 +413,7 @@ func (c *CCompiler) processPointer(starExpr *ast.StarExpr) (string, bool) {
 func (c *CCompiler) processSelector(selectorExpr *ast.SelectorExpr) (string, bool) {
 	identExpr, isIdent := (selectorExpr.X).(*ast.Ident)
 	if isIdent {
-		return identExpr.Name + package_separator + selectorExpr.Sel.Name, true
+		return identExpr.Name + packageSeparator + selectorExpr.Sel.Name, true
 	} else {
 		reportError("Selector with complex expression")
 		return "", false
@@ -432,7 +430,7 @@ func (c *CCompiler) processIdentifier(identExpr *ast.Ident) string {
 			c.currentType.dependencies = append(c.currentType.dependencies,
 				type_code)
 		}
-		return c.source.Name.Name + package_separator + type_code
+		return c.source.Name.Name + packageSeparator + type_code
 	}
 }
 
@@ -471,7 +469,7 @@ func (c *CCompiler) createTypeDef(typeDefinition string) string {
 	if !isComplexType(typeDefinition) {
 		return typeDefinition
 	} else {
-		prefix := c.source.Name.Name + package_separator
+		prefix := c.source.Name.Name + packageSeparator
 
 		for _, typedef := range c.ccode.typedefs {
 			if typedef.ccode == typeDefinition {
@@ -499,7 +497,7 @@ func (c *CCompiler) processFunctionBody(fdecl *ast.FuncDecl) {
 }
 
 func (c *CCompiler) processFunctionPrototype(fdecl *ast.FuncDecl) {
-	prefix := c.source.Name.Name + package_separator
+	prefix := c.source.Name.Name + packageSeparator
 	funcName := fdecl.Name.Name
 	receiver := c.getFuncReceiverParam(fdecl)
 	var parameters []Parameter
@@ -539,7 +537,7 @@ func (c *CCompiler) getFuncReceiverParam(fdecl *ast.FuncDecl) *Parameter {
 		} else {
 			recvParamName = c.createIdent("_recv")
 		}
-		prefix := c.source.Name.Name + package_separator
+		prefix := c.source.Name.Name + packageSeparator
 		ccode := prefix + typeName + " " + recvParamName
 		p := Parameter{name: recvParamName, ccode: ccode, ctype: typeName}
 		return &p
