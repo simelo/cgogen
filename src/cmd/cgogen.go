@@ -153,7 +153,7 @@ func doGoFile() {
 	  #include <stdlib.h>
 	  
 	  #include "skytypes.h"
-	  #include "skyfees.h"`)
+	  #include "skyfee.h"`)
 	}
 
 	typeDefs := make([](*ast.GenDecl), 0)
@@ -802,15 +802,12 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 			if isInHandleTypesList(packName + packageSeparator + typeName) {
 				return getLookupHandleCode(name, packName+packageSeparator+typeName, isPointer)
 			} else {
-				packagePath := packName
-				if get_package_path_from_file_name {
-					packagePath = getPackagePathFromFileName(cfg.Path)
-				}
 				if !isPointer {
 					leftPart = leftPart.Op("*")
 				}
-				return jenCodeToArray(leftPart.Parens(jen.Op("*").Qual(mainPackagePath+packagePath, typeName)).
-					Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name)))))
+				leftPart = leftPart.Parens(jen.Op("*").Id(packName).Id(".").Id(typeName)).
+					Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
+				return jenCodeToArray(leftPart)
 			}
 		}
 	} else if selectorExpr, isSelector := (*_typeExpr).(*ast.SelectorExpr); isSelector {
