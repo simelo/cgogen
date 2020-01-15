@@ -31,6 +31,7 @@ type Config struct {
 	FullTranspile       bool //Full conversion to c code
 	FullTranspileDir    string
 	FullTranspileOut    string
+	Must                bool
 }
 
 func (c *Config) register() {
@@ -50,6 +51,7 @@ func (c *Config) register() {
 	flag.BoolVar(&c.IgnoreDependants, "id", false, "Ignore dependants")
 	flag.StringVar(&c.FullTranspileDir, "transdir", "", "Directory to get source code for full transpile")
 	flag.StringVar(&c.FullTranspileOut, "transout", "", "Directory to put c files of full transpile")
+	flag.BoolVar(&c.Must, "must", false, "Enable export Must_*")
 }
 
 var (
@@ -507,6 +509,11 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 
 	funcName := fdecl.Name.Name
 
+	if !cfg.Must {
+		if strings.HasPrefix(funcName, "Must") {
+			return false
+		}
+	}
 	if !fdecl.Name.IsExported() {
 		applog("Skipping %v \n", funcName)
 		return
