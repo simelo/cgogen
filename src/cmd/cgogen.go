@@ -507,7 +507,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 
 	funcName := fdecl.Name.Name
 
-	if !fdecl.Name.IsExported() {
+	if !fdecl.Name.IsExported() || strings.HasPrefix(funcName, "Must") {
 		applog("Skipping %v \n", funcName)
 		return
 	}
