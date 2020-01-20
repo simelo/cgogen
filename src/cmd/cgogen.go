@@ -81,13 +81,12 @@ var arrayTypes = map[string]string{
 }
 
 //Imports used in this code file
-var importDefs [](*ast.GenDecl)
+var importDefs []*ast.GenDecl
 
 //types that will be replaced by handles
 var handleTypes map[string]string
 var returnVarName = "____error_code"
 var returnErrName = "____return_err"
-var dealOutStringAsGostring = true
 
 func main() {
 	handleTypes = make(map[string]string)
