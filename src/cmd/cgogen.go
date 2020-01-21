@@ -62,6 +62,11 @@ var (
 //Map of types that will replaced by custom types
 var customTypesMap = make(map[string]string)
 
+//Map of callback
+var callbackMap = map[string]string{
+	"coin": "FeeCalculator",
+}
+
 //Types that will use functions of type inplace to convert
 var inplaceConvertTypesPackages = map[string]string{
 	"PubKeySlice":   "cipher",
@@ -90,6 +95,7 @@ var returnErrName = "____return_err"
 
 func main() {
 	handleTypes = make(map[string]string)
+	callbackMap = make(map[string]string)
 	cfg.register()
 	flag.Parse()
 
@@ -290,9 +296,9 @@ func findImportPath(importName string) (string, bool) {
 				if importSpec.Name != nil {
 					name = importSpec.Name.Name
 				} else {
-					path_parts := strings.Split(path, "/")
-					if len(path_parts) > 0 {
-						name = path_parts[len(path_parts)-1]
+					pathParts := strings.Split(path, "/")
+					if len(pathParts) > 0 {
+						name = pathParts[len(pathParts)-1]
 					}
 				}
 				if name == importName {
@@ -490,7 +496,7 @@ func getPackagePathFromFileName(filePath string) string {
 }
 
 //Create code for wrapper function
-func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependant_types *[]string) (isDependant bool) {
+func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependantTypes *[]string) (isDependant bool) {
 	isDependant = false
 	packagePath := getPackagePathFromFileName(cfg.Path)
 	if packagePath == "" {
@@ -523,7 +529,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		recvParamName := receiver.List[0].Names[0].Name
 		recvParam := jen.Id(argName(recvParamName))
 		typeSpec, ok := typeSpecStr(_type, fast.Name.Name, false)
-		if !ok || isTypeSpecInDependantList(typeSpec, dependant_types) {
+		if !ok || isTypeSpecInDependantList(typeSpec, dependantTypes) {
 			isDependant = true
 			if cfg.IgnoreDependants {
 				//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -569,7 +575,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		if fieldIdx >= returnFieldsIndex {
 			// Field in return types list
 			typeName, ok := typeSpecStr(&field.Type, fast.Name.Name, true)
-			if !ok || isTypeSpecInDependantList(typeName, dependant_types) {
+			if !ok || isTypeSpecInDependantList(typeName, dependantTypes) {
 				isDependant = true
 				if cfg.IgnoreDependants {
 					//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -599,7 +605,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 					params = append(params, jen.Id(argName(ident.Name)))
 				} else {
 					typeName, ok := typeSpecStr(&field.Type, fast.Name.Name, false)
-					if !ok || isTypeSpecInDependantList(typeName, dependant_types) {
+					if !ok || isTypeSpecInDependantList(typeName, dependantTypes) {
 						isDependant = true
 						if cfg.IgnoreDependants {
 							//TODO: stdevEclipse Check if type can be replaced by another type or handle
@@ -1302,3 +1308,16 @@ var basicTypesMap = map[string]string{
 }
 
 var packageSeparator = "__"
+
+func getCallbackCode(name string, typeName string) []jen.Code {
+
+	c := jen.Func().Params(
+		jen.Id("a").Id("A"),
+	).Id("foo").Params(
+		jen.Id("b"),
+		jen.Id("c").String(),
+	).String().Block(
+		jen.Return(jen.Id("b").Op("+").Id("c")),
+	)
+	return jenCodeToArray(c)
+}
