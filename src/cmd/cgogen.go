@@ -1,5 +1,6 @@
 package main
 
+import "C"
 import (
 	"bytes"
 	"flag"
@@ -1309,15 +1310,34 @@ var basicTypesMap = map[string]string{
 
 var packageSeparator = "__"
 
-func getCallbackCode(name string, typeName string) []jen.Code {
+func getCallbackCode() []jen.Code {
 
-	c := jen.Func().Params(
-		jen.Id("a").Id("A"),
-	).Id("foo").Params(
-		jen.Id("b"),
-		jen.Id("c").String(),
-	).String().Block(
-		jen.Return(jen.Id("b").Op("+").Id("c")),
+	varfunction := jen.Func().Params(
+		jen.Id("pTx").Id("*coin.Transaction"),
+	).Uint64().Error().Block(
+		jen.Var().Id("fee").Id("C.GoUint64_"),
+		jen.Id("handle").Op(":=").Id("registerTransactionHandle").Call().Params(jen.Id("pTx")),
+		jen.Id("result").Op(":=").Id("C.callFeeCalculator").Call(jen.Id("pFeeCalc"), jen.Id("handle"), jen.Id("&fee")),
+		jen.Id("closeHandle").Call(jen.Id("Handle").Call(jen.Id("handle"))),
+		jen.If(jen.Id("result").Op("==").Id("SKY_OK")).Block(
+			jen.Return(jen.Id("uint64").Call(jen.Id("fee"))), jen.Nil()),
+		jen.Else().Block(
+			jen.Return(jen.Lit(0), jen.Id("errors.New").Call(jen.Id("Error calculating fee"))),
+		),
 	)
-	return jenCodeToArray(c)
+
+	varname := jen.Id("feeCalc").Op(":=").Add(varfunction)
+
+	//feeCalc := func(pTx *coin.Transaction) (uint64, error) {
+	//	var fee C.GoUint64_
+	//	handle := registerTransactionHandle(pTx)
+	//	result := C.callFeeCalculator(pFeeCalc, handle, &fee)
+	//	closeHandle(Handle(handle))
+	//	if result == SKY_OK {
+	//		return uint64(fee), nil
+	//	} else {
+	//		return 0, errors.New("Error calculating fee")
+	//	}
+	//}
+	return jenCodeToArray(varname)
 }
