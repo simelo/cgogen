@@ -1,6 +1,5 @@
 package main
 
-import "C"
 import (
 	"bytes"
 	"flag"
@@ -63,11 +62,6 @@ var (
 //Map of types that will replaced by custom types
 var customTypesMap = make(map[string]string)
 
-//Map of callback
-var callbackMap = map[string]string{
-	"coin": "FeeCalculator",
-}
-
 //Types that will use functions of type inplace to convert
 var inplaceConvertTypesPackages = map[string]string{
 	"PubKeySlice":   "cipher",
@@ -96,7 +90,7 @@ var returnErrName = "____return_err"
 
 func main() {
 	handleTypes = make(map[string]string)
-	callbackMap = make(map[string]string)
+
 	cfg.register()
 	flag.Parse()
 
@@ -158,7 +152,7 @@ func doGoFile() {
 	  #include "skyfee.h"`)
 	}
 
-	typeDefs := make([](*ast.GenDecl), 0)
+	typeDefs := make([]*ast.GenDecl, 0)
 
 	for _, _decl := range fast.Decls {
 
@@ -795,8 +789,12 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 				if !isPointer {
 					leftPart = leftPart.Op("*")
 				}
-				leftPart = leftPart.Parens(jen.Op("*").Id(packName).Id(".").Id(typeName)).
-					Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
+				if typeName == "FeeCalculator" {
+					leftPart = jen.Id(name).Op(":=").Add(getCallbackCode(name))
+				} else {
+					leftPart = leftPart.Parens(jen.Op("*").Id(packName).Id(".").Id(typeName)).
+						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
+				}
 				return jenCodeToArray(leftPart)
 			}
 		}
@@ -920,6 +918,7 @@ func isInplaceConvertType(typeName string) bool {
 }
 
 /* Process a type expression. Returns the code in C for the type and ok if successful */
+// typedata
 func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 	packageName string, name string,
 	definedTypes *[]string,
@@ -1169,7 +1168,7 @@ func processTypeDef(fast *ast.File, tdecl *ast.GenDecl,
 }
 
 /* Process all type definitions. Returns c code for all the defintions */
-func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *[]string) string {
+func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependantTypes *[]string) string {
 	resultCode := ""
 	var definedTypes []string
 	for key := range GetBasicTypes() {
@@ -1185,7 +1184,7 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 		wentBlank = true
 		for index, typeDecl := range typeDecls {
 			if typeDecl != nil {
-				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &definedTypes, nil, dependant_types)
+				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &definedTypes, nil, dependantTypes)
 				if ok {
 					wentBlank = false
 					typeDecls[index] = nil
@@ -1203,7 +1202,7 @@ func processTypeDefs(fast *ast.File, typeDecls []*ast.GenDecl, dependant_types *
 	if unprocessed > 0 {
 		for _, typeDecl := range typeDecls {
 			if typeDecl != nil {
-				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &definedTypes, &forwardsDeclarations, dependant_types)
+				typeCode, ok, isDependant := processTypeDef(fast, typeDecl, &definedTypes, &forwardsDeclarations, dependantTypes)
 				if ok {
 					if !(cfg.IgnoreDependants && isDependant) {
 						resultCode += typeCode
@@ -1310,34 +1309,19 @@ var basicTypesMap = map[string]string{
 
 var packageSeparator = "__"
 
-func getCallbackCode() []jen.Code {
+func getCallbackCode(varName string) *jen.Statement {
 
 	varFunction := jen.Func().Params(
 		jen.Id("pTx").Id("*coin.Transaction"),
-	).Uint64().Error().Block(
+	).Parens(jen.Uint64().Op(",").Error()).Block(
 		jen.Var().Id("fee").Id("C.GoUint64_"),
-		jen.Id("handle").Op(":=").Id("registerTransactionHandle").Call().Params(jen.Id("pTx")),
-		jen.Id("result").Op(":=").Id("C.callFeeCalculator").Call(jen.Id("pFeeCalc"), jen.Id("handle"), jen.Id("&fee")),
+		jen.Id("handle").Op(":=").Id("registerTransactionHandle").Call(jen.Id("pTx")),
+		jen.Id("result").Op(":=").Id("C.callFeeCalculator").Call(jen.Id("_"+varName), jen.Id("handle"), jen.Id("&fee")),
 		jen.Id("closeHandle").Call(jen.Id("Handle").Call(jen.Id("handle"))),
 		jen.If(jen.Id("result").Op("==").Id("SKY_OK")).Block(
-			jen.Return(jen.Id("uint64").Call(jen.Id("fee"))), jen.Nil()),
-		jen.Else().Block(
-			jen.Return(jen.Lit(0), jen.Id("errors.New").Call(jen.Id("Error calculating fee"))),
-		),
+			jen.Return(jen.Id("uint64").Call(jen.Id("fee")), jen.Nil())),
+		jen.Return(jen.Lit(0), jen.Qual("errors", "New").Call(jen.Lit("Error calculating fee"))),
 	)
 
-	varName := jen.Id("feeCalc").Op(":=").Add(varFunction)
-
-	//feeCalc := func(pTx *coin.Transaction) (uint64, error) {
-	//	var fee C.GoUint64_
-	//	handle := registerTransactionHandle(pTx)
-	//	result := C.callFeeCalculator(pFeeCalc, handle, &fee)
-	//	closeHandle(Handle(handle))
-	//	if result == SKY_OK {
-	//		return uint64(fee), nil
-	//	} else {
-	//		return 0, errors.New("Error calculating fee")
-	//	}
-	//}
-	return jenCodeToArray(varName)
+	return varFunction
 }
