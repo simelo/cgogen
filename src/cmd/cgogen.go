@@ -1312,7 +1312,7 @@ var packageSeparator = "__"
 
 func getCallbackCode() []jen.Code {
 
-	varfunction := jen.Func().Params(
+	varFunction := jen.Func().Params(
 		jen.Id("pTx").Id("*coin.Transaction"),
 	).Uint64().Error().Block(
 		jen.Var().Id("fee").Id("C.GoUint64_"),
@@ -1326,7 +1326,7 @@ func getCallbackCode() []jen.Code {
 		),
 	)
 
-	varname := jen.Id("feeCalc").Op(":=").Add(varfunction)
+	varName := jen.Id("feeCalc").Op(":=").Add(varFunction)
 
 	//feeCalc := func(pTx *coin.Transaction) (uint64, error) {
 	//	var fee C.GoUint64_
@@ -1339,5 +1339,5 @@ func getCallbackCode() []jen.Code {
 	//		return 0, errors.New("Error calculating fee")
 	//	}
 	//}
-	return jenCodeToArray(varname)
+	return jenCodeToArray(varName)
 }
