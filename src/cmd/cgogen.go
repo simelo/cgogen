@@ -31,6 +31,7 @@ type Config struct {
 	FullTranspile       bool //Full conversion to c code
 	FullTranspileDir    string
 	FullTranspileOut    string
+	PrefixLib           string
 }
 
 func (c *Config) register() {
@@ -50,6 +51,7 @@ func (c *Config) register() {
 	flag.BoolVar(&c.IgnoreDependants, "id", false, "Ignore dependants")
 	flag.StringVar(&c.FullTranspileDir, "transdir", "", "Directory to get source code for full transpile")
 	flag.StringVar(&c.FullTranspileOut, "transout", "", "Directory to put c files of full transpile")
+	flag.StringVar(&c.PrefixLib, "prefix", "SKY", "Define prefix the function and type error export")
 }
 
 var (
@@ -61,6 +63,12 @@ var (
 
 //Map of types that will replaced by custom types
 var customTypesMap = make(map[string]string)
+
+// Configure prefix
+var (
+	functionPrefix = ""
+	includePrefix  = ""
+)
 
 //Types that will use functions of type inplace to convert
 var inplaceConvertTypesPackages = map[string]string{
@@ -94,6 +102,9 @@ func main() {
 	handleTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
+	functionPrefix = strings.ToUpper(string(cfg.PrefixLib))
+	includePrefix = strings.ToLower(cfg.PrefixLib)
+	log.Println("Load prefix " + functionPrefix)
 
 	if cfg.Verbose {
 		applog = log.Printf
@@ -152,8 +163,7 @@ func doGoFile() {
 	  #include <string.h>
 	  #include <stdlib.h>
 	  
-	  #include "skytypes.h"
-	  #include "skyfee.h"`)
+	  #include "` + includePrefix + `types.h"`)
 	}
 
 	typeDefs := make([](*ast.GenDecl), 0)
@@ -309,7 +319,7 @@ func findImportPath(importName string) (string, bool) {
 	return "", false
 }
 
-func isSkycoinName(importName string) bool {
+func isLibName(importName string) bool {
 	path, result := findImportPath(importName)
 	if result {
 		return strings.HasPrefix(path, "github.com/SkycoinProject")
@@ -407,7 +417,7 @@ func typeSpecStr(_typeExpr *ast.Expr, package_name string, isOutput bool) (strin
 					} else if isInCustomTypesList(extern_package + "." + typeName) {
 						spec = getCustomTypeName(extern_package + "." + typeName)
 						isDealt = true
-					} else if !isSkycoinName(extern_package) {
+					} else if !isLibName(extern_package) {
 						return extern_package, false
 					}
 				}
@@ -625,7 +635,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 		}
 	}
 
-	cfuncName := "SKY_" + fast.Name.Name + "_" + funcName
+	cfuncName := functionPrefix + "_" + fast.Name.Name + "_" + funcName
 	stmt := outFile.Comment("export " + cfuncName) //nolint staticcheck
 	stmt = outFile.Func().Id(cfuncName)
 	stmt = stmt.Params(params...)
@@ -741,7 +751,7 @@ func getLookupHandleCode(name string, typeName string, isPointer bool) []jen.Cod
 	lookUpName := "lookup" + handleTypes[typeName] + "Handle"
 	listVar = listVar.Id(lookUpName).Call(jen.Op("*").Id(argName(name)))
 	checkError := jen.If(jen.Op("!").Id("ok"+name)).
-		Block(jen.Id(returnVarName).Op("=").Id("SKY_BAD_HANDLE"), jen.Return())
+		Block(jen.Id(returnVarName).Op("=").Id(functionPrefix+"_BAD_HANDLE"), jen.Return())
 	if !isPointer {
 		assign := jen.Id(name).Op(":=").Op("*").Id(varname)
 		return jenCodeToArray(listVar, checkError, assign)
@@ -858,7 +868,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 				argCode = jen.Op("&").Id(argName(name))
 			}
 			return jen.Op("*").Id(name).Op("=").Id("register" + handleTypes[package_name+packageSeparator+typeName] + "Handle").Call(argCode)
-		} else if isSkyArrayType(typeName) {
+		} else if isLibArrayType(typeName) {
 			var argCode jen.Code
 			if isPointer {
 				argCode = jen.Parens(jen.Op("*").Id(argName(name))).Op("[:]")
@@ -914,7 +924,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 	return nil
 }
 
-func isSkyArrayType(typeName string) bool {
+func isLibArrayType(typeName string) bool {
 	if _, ok := arrayTypes[typeName]; ok {
 		return true
 	}
@@ -1060,7 +1070,7 @@ func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 		typeCode, isBasic := GetCTypeFromGoType(identExpr.Name)
 		if !isBasic {
 			addDependency := false
-			if packageName != fast.Name.Name && !isSkycoinName(packageName) {
+			if packageName != fast.Name.Name && !isLibName(packageName) {
 				if cfg.DependOnlyExternal {
 					if isExternalName(packageName) {
 						addDependency = true
@@ -1237,7 +1247,7 @@ func fixExportComment(filePath string) {
 	err = f.Close()
 	check(err)
 
-	contents = strings.Replace(contents, "// export SKY_", "//export SKY_", -1)
+	contents = strings.Replace(contents, "// export "+functionPrefix+"_", "//export "+functionPrefix+"_", -1)
 	f, err = os.Create(filePath)
 	check(err)
 	_, err = f.WriteString(contents)
