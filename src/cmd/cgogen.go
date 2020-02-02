@@ -31,6 +31,7 @@ type Config struct {
 	FullTranspile       bool //Full conversion to c code
 	FullTranspileDir    string
 	FullTranspileOut    string
+	MainPackagePath     string
 }
 
 func (c *Config) register() {
@@ -50,6 +51,7 @@ func (c *Config) register() {
 	flag.BoolVar(&c.IgnoreDependants, "id", false, "Ignore dependants")
 	flag.StringVar(&c.FullTranspileDir, "transdir", "", "Directory to get source code for full transpile")
 	flag.StringVar(&c.FullTranspileOut, "transout", "", "Directory to put c files of full transpile")
+	flag.StringVar(&c.MainPackagePath, "main", "github.com/SkycoinProject/skycoin", "Define main package path the functions")
 }
 
 var (
@@ -69,7 +71,10 @@ var inplaceConvertTypesPackages = map[string]string{
 	"BalanceResult": "cli",
 }
 
-var mainPackagePath = string("github.com/SkycoinProject/skycoin/src/")
+var (
+	mainPackagePath = ""
+	packagePath     = ""
+)
 
 var arrayTypes = map[string]string{
 	"PubKey":    "cipher",
@@ -94,7 +99,7 @@ func main() {
 	handleTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
-
+	packagePath, mainPackagePath = getPathPackage(cfg.MainPackagePath)
 	if cfg.Verbose {
 		applog = log.Printf
 	}
@@ -312,7 +317,7 @@ func findImportPath(importName string) (string, bool) {
 func isSkycoinName(importName string) bool {
 	path, result := findImportPath(importName)
 	if result {
-		return strings.HasPrefix(path, "github.com/SkycoinProject")
+		return strings.HasPrefix(path, packagePath)
 	} else {
 		return false
 	}
@@ -1319,3 +1324,18 @@ var basicTypesMap = map[string]string{
 }
 
 var packageSeparator = "__"
+
+func getPathPackage(path string) (packagePath_ string, mainPackagePath_ string) {
+
+	index := strings.LastIndex(path, "/")
+	if index == -1 {
+		mainPackagePath_ = path
+	} else {
+		mainPackagePath_ = string(path[:index])
+	}
+	index = strings.LastIndex(mainPackagePath_, "/")
+	packagePath_ = string(mainPackagePath_[:index+1])
+	mainPackagePath_ = mainPackagePath_ + "/src/"
+
+	return
+}
