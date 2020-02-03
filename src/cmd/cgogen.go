@@ -31,6 +31,7 @@ type Config struct {
 	FullTranspile       bool //Full conversion to c code
 	FullTranspileDir    string
 	FullTranspileOut    string
+	MainPackagePath     string
 	PrefixLib           string
 }
 
@@ -51,6 +52,7 @@ func (c *Config) register() {
 	flag.BoolVar(&c.IgnoreDependants, "id", false, "Ignore dependants")
 	flag.StringVar(&c.FullTranspileDir, "transdir", "", "Directory to get source code for full transpile")
 	flag.StringVar(&c.FullTranspileOut, "transout", "", "Directory to put c files of full transpile")
+	flag.StringVar(&c.MainPackagePath, "main", "", "Define main package path the functions")
 	flag.StringVar(&c.PrefixLib, "prefix", "SKY", "Define prefix the function and type error export")
 }
 
@@ -77,7 +79,10 @@ var inplaceConvertTypesPackages = map[string]string{
 	"BalanceResult": "cli",
 }
 
-var mainPackagePath = string("github.com/SkycoinProject/skycoin/src/")
+var (
+	mainPackagePath = ""
+	packagePath     = ""
+)
 
 var arrayTypes = map[string]string{
 	"PubKey":    "cipher",
@@ -102,6 +107,11 @@ func main() {
 	handleTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
+	if cfg.MainPackagePath == "" {
+		fmt.Println("The main package path is required")
+		return
+	}
+	packagePath, mainPackagePath = getPathPackage(cfg.MainPackagePath)
 	functionPrefix = strings.ToUpper(string(cfg.PrefixLib))
 	includePrefix = strings.ToLower(cfg.PrefixLib)
 	log.Println("Load prefix " + functionPrefix)
@@ -322,7 +332,7 @@ func findImportPath(importName string) (string, bool) {
 func isLibName(importName string) bool {
 	path, result := findImportPath(importName)
 	if result {
-		return strings.HasPrefix(path, "github.com/SkycoinProject")
+		return strings.HasPrefix(path, packagePath)
 	} else {
 		return false
 	}
@@ -1329,3 +1339,18 @@ var basicTypesMap = map[string]string{
 }
 
 var packageSeparator = "__"
+
+func getPathPackage(path string) (packagePath_ string, mainPackagePath_ string) {
+
+	index := strings.LastIndex(path, "/")
+	if index == -1 {
+		mainPackagePath_ = path
+	} else {
+		mainPackagePath_ = string(path[:index])
+	}
+	index = strings.LastIndex(mainPackagePath_, "/")
+	packagePath_ = string(mainPackagePath_[:index+1])
+	mainPackagePath_ = mainPackagePath_ + "/src/"
+
+	return
+}
