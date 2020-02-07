@@ -84,16 +84,16 @@ var (
 	packagePath     = ""
 )
 
-var arrayTypes = map[string]string{
-	"PubKey":    "cipher",
-	"SHA256":    "cipher",
-	"Sig":       "cipher",
-	"SecKey":    "cipher",
-	"Ripemd160": "cipher",
-	"UxArray":   "coin",
-}
+//var arrayTypes = map[string]string{
+//	"PubKey":    "cipher",
+//	"SHA256":    "cipher",
+//	"Sig":       "cipher",
+//	"SecKey":    "cipher",
+//	"Ripemd160": "cipher",
+//	"UxArray":   "coin",
+//}
 
-// var arrayTypes map[string]string
+var arrayTypes map[string]string
 
 //Imports used in this code file
 var importDefs [](*ast.GenDecl)
@@ -107,7 +107,7 @@ var get_package_path_from_file_name = true
 
 func main() {
 	handleTypes = make(map[string]string)
-	// arrayTypes = make(map[string]string)
+	arrayTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
 	if cfg.MainPackagePath == "" {
@@ -1269,6 +1269,7 @@ func fixExportComment(filePath string) {
 func processTypeSetting(comment string) {
 	handlePrefix := "CGOGEN HANDLES "
 	typeConversionPrefix := "CGOGEN TYPES_CONVERSION "
+	typeSliceCustomPrefix := "CGOGEN SLICE "
 	if strings.HasPrefix(comment, handlePrefix) {
 		handlesPart := comment[len(handlePrefix):]
 		handles := strings.Split(handlesPart, ",")
@@ -1289,6 +1290,17 @@ func processTypeSetting(comment string) {
 				customTypesMap[typesPart[0]] = typesPart[1]
 			} else if len(typesPart) > 0 {
 				customTypesMap[typesPart[0]] = typesPart[0]
+			}
+		}
+	} else if strings.HasPrefix(comment, typeSliceCustomPrefix) {
+		typesPart := comment[len(typeSliceCustomPrefix):]
+		types := strings.Split(typesPart, ",")
+		for _, t := range types {
+			typesPart := strings.Split(t, "|")
+			if len(typesPart) > 1 {
+				arrayTypes[typesPart[0]] = typesPart[1]
+			} else if len(typesPart) > 0 {
+				arrayTypes[typesPart[0]] = typesPart[0]
 			}
 		}
 	}
