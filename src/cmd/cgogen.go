@@ -93,6 +93,8 @@ var arrayTypes = map[string]string{
 	"UxArray":   "coin",
 }
 
+// var arrayTypes map[string]string
+
 //Imports used in this code file
 var importDefs [](*ast.GenDecl)
 
@@ -105,6 +107,7 @@ var get_package_path_from_file_name = true
 
 func main() {
 	handleTypes = make(map[string]string)
+	// arrayTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
 	if cfg.MainPackagePath == "" {
@@ -125,6 +128,8 @@ func main() {
 	} else {
 		doGoFile()
 	}
+	applog("Len the array %d", len(arrayTypes))
+	applog("Len the handles %d", len(handleTypes))
 }
 
 func doGoFile() {
@@ -482,6 +487,10 @@ func isInCustomTypesList(typeName string) bool {
 
 func getHandleName(typeName string) string {
 	return "*C." + handleTypes[typeName] + packageSeparator + "Handle"
+}
+
+func getSliceName(typeName string) string {
+	return arrayTypes[typeName] + "__" + typeName
 }
 
 func getCustomTypeName(typeName string) string {
@@ -866,6 +875,10 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 		return getCodeToConvertOutParameter(_type, package_name, name, true)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
+		if isLibArrayType(typeName, package_name) {
+			return jen.Id("copyTo"+getSliceName(typeName)).Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name))),
+				jen.Id(name))
+		}
 		if dealOutStringAsGostring && typeName == "string" {
 			return jen.Id("copyString").Call(jen.Id(argName(name)), jen.Id(name))
 		} else if IsBasicGoType(typeName) {
@@ -878,18 +891,6 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 				argCode = jen.Op("&").Id(argName(name))
 			}
 			return jen.Op("*").Id(name).Op("=").Id("register" + handleTypes[package_name+packageSeparator+typeName] + "Handle").Call(argCode)
-		} else if isLibArrayType(typeName) {
-			var argCode jen.Code
-			if isPointer {
-				argCode = jen.Parens(jen.Op("*").Id(argName(name))).Op("[:]")
-			} else {
-				argCode = jen.Id(argName(name)).Op("[:]")
-			}
-
-			return jen.Id("copyToBuffer").Call(jen.Qual("reflect", "ValueOf").Call(argCode),
-				jen.Qual("unsafe", "Pointer").Call(jen.Id(name)),
-				jen.Id("uint").Parens(jen.Id("Sizeof"+typeName)))
-
 		} else {
 			var argCode jen.Code
 			if isPointer {
@@ -934,11 +935,8 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, package_name string, name
 	return nil
 }
 
-func isLibArrayType(typeName string) bool {
-	if _, ok := arrayTypes[typeName]; ok {
-		return true
-	}
-	return false
+func isLibArrayType(name, packageName string) bool {
+	return arrayTypes[name] == packageName
 }
 
 func isInplaceConvertType(typeName string) bool {
