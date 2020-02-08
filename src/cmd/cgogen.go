@@ -15,24 +15,25 @@ import (
 )
 
 type Config struct {
-	Path                string
-	Verbose             bool
-	ProcessFunctions    bool
-	ProcessTypes        bool
-	OutputFileGO        string
-	OutputFileC         string
-	OutputFileCH        string
-	ProcessDependencies bool
-	DependOnlyExternal  bool
-	TypeDependencyFile  string
-	FuncDependencyFile  string
-	TypeConversionFile  string
-	IgnoreDependants    bool
-	FullTranspile       bool //Full conversion to c code
-	FullTranspileDir    string
-	FullTranspileOut    string
-	MainPackagePath     string
-	PrefixLib           string
+	Path                    string
+	Verbose                 bool
+	ProcessFunctions        bool
+	ProcessTypes            bool
+	OutputFileGO            string
+	OutputFileC             string
+	OutputFileCH            string
+	ProcessDependencies     bool
+	DependOnlyExternal      bool
+	TypeDependencyFile      string
+	FuncDependencyFile      string
+	TypeConversionFile      string
+	IgnoreDependants        bool
+	FullTranspile           bool //Full conversion to c code
+	FullTranspileDir        string
+	FullTranspileOut        string
+	MainPackagePath         string
+	PrefixLib               string
+	DealOutStringAsGostring bool
 }
 
 func (c *Config) register() {
@@ -54,6 +55,7 @@ func (c *Config) register() {
 	flag.StringVar(&c.FullTranspileOut, "transout", "", "Directory to put c files of full transpile")
 	flag.StringVar(&c.MainPackagePath, "main", "", "Define main package path the functions")
 	flag.StringVar(&c.PrefixLib, "prefix", "SKY", "Define prefix the function and type error export")
+	flag.BoolVar(&c.DealOutStringAsGostring, "dealoutString", true, "Disable or enable export GoString")
 }
 
 var (
@@ -94,14 +96,14 @@ var arrayTypes = map[string]string{
 }
 
 //Imports used in this code file
-var importDefs [](*ast.GenDecl)
+var importDefs []*ast.GenDecl
 
 //types that will be replaced by handles
 var handleTypes map[string]string
 var returnVarName = "____error_code"
 var returnErrName = "____return_err"
-var dealOutStringAsGostring = true
-var get_package_path_from_file_name = true
+var dealOutStringAsGostring bool
+var getPackagePathFromFilename bool
 
 func main() {
 	handleTypes = make(map[string]string)
@@ -114,6 +116,7 @@ func main() {
 	packagePath, mainPackagePath = getPathPackage(cfg.MainPackagePath)
 	functionPrefix = strings.ToUpper(string(cfg.PrefixLib))
 	includePrefix = strings.ToLower(cfg.PrefixLib)
+	dealOutStringAsGostring = cfg.DealOutStringAsGostring
 	log.Println("Load prefix " + functionPrefix)
 
 	if cfg.Verbose {
@@ -122,8 +125,10 @@ func main() {
 
 	if cfg.FullTranspile {
 		doFullTranspile()
+		getPackagePathFromFilename = false
 	} else {
 		doGoFile()
+		getPackagePathFromFilename = true
 	}
 }
 
@@ -156,7 +161,7 @@ func doGoFile() {
 	check(err)
 
 	packagePath := ""
-	if get_package_path_from_file_name {
+	if getPackagePathFromFilename {
 		packagePath = getPackagePathFromFileName(cfg.Path) + "/" + fast.Name.Name
 		applog("Package Path: %s ", packagePath)
 	}
@@ -518,7 +523,7 @@ func getPackagePathFromFileName(filePath string) string {
 func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependant_types *[]string) (isDependant bool) {
 	isDependant = false
 	packagePath := ""
-	if get_package_path_from_file_name {
+	if getPackagePathFromFilename {
 		packagePath = getPackagePathFromFileName(cfg.Path)
 	}
 	if packagePath == "" {
