@@ -73,11 +73,7 @@ var (
 )
 
 //Types that will use functions of type inplace to convert
-var inplaceConvertTypesPackages = map[string]string{
-	"PubKeySlice":   "cipher",
-	"Address":       "cipher",
-	"BalanceResult": "cli",
-}
+var inplaceConvertTypesPackages map[string]string
 
 var (
 	mainPackagePath = ""
@@ -115,6 +111,8 @@ func main() {
 	functionPrefix = strings.ToUpper(string(cfg.PrefixLib))
 	includePrefix = strings.ToLower(cfg.PrefixLib)
 	log.Println("Load prefix " + functionPrefix)
+
+	inplaceConvertTypesPackages = make(map[string]string)
 
 	if cfg.Verbose {
 		applog = log.Printf
@@ -1271,6 +1269,7 @@ func fixExportComment(filePath string) {
 func processTypeSetting(comment string) {
 	handlePrefix := "CGOGEN HANDLES "
 	typeConversionPrefix := "CGOGEN TYPES_CONVERSION "
+	inplacePrefix := "CGOGEN INPLACE "
 	if strings.HasPrefix(comment, handlePrefix) {
 		handlesPart := comment[len(handlePrefix):]
 		handles := strings.Split(handlesPart, ",")
@@ -1291,6 +1290,17 @@ func processTypeSetting(comment string) {
 				customTypesMap[typesPart[0]] = typesPart[1]
 			} else if len(typesPart) > 0 {
 				customTypesMap[typesPart[0]] = typesPart[0]
+			}
+		}
+	} else if strings.HasPrefix(comment, inplacePrefix) {
+		typesPart := comment[len(inplacePrefix):]
+		types := strings.Split(typesPart, ",")
+		for _, t := range types {
+			typesPart := strings.Split(t, "|")
+			if len(typesPart) > 1 {
+				inplaceConvertTypesPackages[typesPart[0]] = typesPart[1]
+			} else if len(typesPart) > 0 {
+				inplaceConvertTypesPackages[typesPart[0]] = typesPart[0]
 			}
 		}
 	}
