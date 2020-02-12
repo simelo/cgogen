@@ -82,15 +82,6 @@ var (
 	packagePath     = ""
 )
 
-//var arrayTypes = map[string]string{
-//	"PubKey":    "cipher",
-//	"SHA256":    "cipher",
-//	"Sig":       "cipher",
-//	"SecKey":    "cipher",
-//	"Ripemd160": "cipher",
-//	"UxArray":   "coin",
-//}
-
 var arrayTypes map[string]string
 
 //Imports used in this code file
