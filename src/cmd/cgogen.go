@@ -82,14 +82,7 @@ var (
 	packagePath     = ""
 )
 
-var arrayTypes = map[string]string{
-	"PubKey":    "cipher",
-	"SHA256":    "cipher",
-	"Sig":       "cipher",
-	"SecKey":    "cipher",
-	"Ripemd160": "cipher",
-	"UxArray":   "coin",
-}
+var arrayTypes map[string]string
 
 //Imports used in this code file
 var importDefs []*ast.GenDecl
@@ -103,6 +96,7 @@ var getPackagePathFromFilename bool
 
 func main() {
 	handleTypes = make(map[string]string)
+	arrayTypes = make(map[string]string)
 	cfg.register()
 	flag.Parse()
 	if cfg.MainPackagePath == "" {
@@ -128,6 +122,8 @@ func main() {
 		doGoFile()
 		getPackagePathFromFilename = true
 	}
+	applog("Len the array %d", len(arrayTypes))
+	applog("Len the handles %d", len(handleTypes))
 }
 
 func doGoFile() {
@@ -485,6 +481,10 @@ func isInCustomTypesList(typeName string) bool {
 
 func getHandleName(typeName string) string {
 	return "*C." + handleTypes[typeName] + packageSeparator + "Handle"
+}
+
+func getSliceName(typeName string) string {
+	return arrayTypes[typeName] + "__" + typeName
 }
 
 func getCustomTypeName(typeName string) string {
@@ -869,6 +869,10 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, packageName string, name 
 		return getCodeToConvertOutParameter(_type, packageName, name, true)
 	} else if identExpr, isIdent := (*_typeExpr).(*ast.Ident); isIdent {
 		typeName := identExpr.Name
+		if isLibArrayType(typeName, packageName) {
+			return jen.Id("copyTo"+getSliceName(typeName)).Call(jen.Qual("reflect", "ValueOf").Call(jen.Id(argName(name))),
+				jen.Id(name))
+		}
 		if dealOutStringAsGostring && typeName == "string" {
 			return jen.Id("copyString").Call(jen.Id(argName(name)), jen.Id(name))
 		} else if IsBasicGoType(typeName) {
@@ -881,7 +885,7 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, packageName string, name 
 				argCode = jen.Op("&").Id(argName(name))
 			}
 			return jen.Op("*").Id(name).Op("=").Id("register" + handleTypes[packageName+packageSeparator+typeName] + "Handle").Call(argCode)
-		} else if isLibArrayType(typeName) {
+		} else if isLibArrayType(typeName, packageName) {
 			var argCode jen.Code
 			if isPointer {
 				argCode = jen.Parens(jen.Op("*").Id(argName(name))).Op("[:]")
@@ -937,11 +941,8 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, packageName string, name 
 	return nil
 }
 
-func isLibArrayType(typeName string) bool {
-	if _, ok := arrayTypes[typeName]; ok {
-		return true
-	}
-	return false
+func isLibArrayType(name, packageName string) bool {
+	return arrayTypes[name] == packageName
 }
 
 func isInplaceConvertType(typeName string) bool {
@@ -1274,6 +1275,7 @@ func fixExportComment(filePath string) {
 func processTypeSetting(comment string) {
 	handlePrefix := "CGOGEN HANDLES "
 	typeConversionPrefix := "CGOGEN TYPES_CONVERSION "
+	typeSliceCustomPrefix := "CGOGEN SLICE "
 	inplacePrefix := "CGOGEN INPLACE "
 	if strings.HasPrefix(comment, handlePrefix) {
 		handlesPart := comment[len(handlePrefix):]
@@ -1306,6 +1308,17 @@ func processTypeSetting(comment string) {
 				inplaceConvertTypesPackages[typesPart[0]] = typesPart[1]
 			} else if len(typesPart) > 0 {
 				inplaceConvertTypesPackages[typesPart[0]] = typesPart[0]
+			}
+		}
+	} else if strings.HasPrefix(comment, typeSliceCustomPrefix) {
+		typesPart := comment[len(typeSliceCustomPrefix):]
+		types := strings.Split(typesPart, ",")
+		for _, t := range types {
+			typesPart := strings.Split(t, "|")
+			if len(typesPart) > 1 {
+				arrayTypes[typesPart[0]] = typesPart[1]
+			} else if len(typesPart) > 0 {
+				arrayTypes[typesPart[0]] = typesPart[0]
 			}
 		}
 	}
