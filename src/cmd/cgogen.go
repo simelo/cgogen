@@ -124,6 +124,7 @@ func main() {
 	}
 	applog("Len the array %d", len(arrayTypes))
 	applog("Len the handles %d", len(handleTypes))
+	applog("Len the customType %d", len(customTypesMap))
 }
 
 func doGoFile() {
@@ -434,6 +435,8 @@ func typeSpecStr(_typeExpr *ast.Expr, packageName string, isOutput bool) (string
 			if !isDealt {
 				if isInHandleTypesList(externPackage + packageSeparator + typeName) {
 					spec = getHandleName(externPackage + packageSeparator + typeName)
+				} else if isInCustomTypesList(externPackage + packageSeparator + typeName) {
+					spec = getCustomTypeName(externPackage + packageSeparator + typeName)
 				} else {
 					isExported := isAsciiUpper(rune(typeName[0]))
 					if spec == "" && !addPointer && isExported {
@@ -923,6 +926,11 @@ func getCodeToConvertOutParameter(_typeExpr *ast.Expr, packageName string, name 
 				return jen.Op("*").Id(name).Op("=").
 					Id("register" + handleTypes[selName+packageSeparator+typeName] + "Handle").
 					Call(argCode)
+			}
+			if isInCustomTypesList(selName + packageSeparator + typeName) {
+				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
+					Qual("C", selName+packageSeparator+typeName)).
+					Parens(jen.Qual("unsafe", "Pointer").Parens(argCode))
 			} else {
 				return jen.Op("*").Id(name).Op("=").Op("*").Parens(jen.Op("*").
 					Qual("C", selName+packageSeparator+typeName)).
