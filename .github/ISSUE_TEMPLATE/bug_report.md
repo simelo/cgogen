@@ -14,6 +14,7 @@ A clear and concise description of the problem and bug effects.
 
 - OS: e.g. Linux, Windows, Mac OS X
 - Platform: the equivalent of `uname -smr` or `uname -smrv` e.g. Darwin 17.4.0 x86_64
+- Go version: the output of `go version` for the minimal version of go code syntax rules that's meant to be supported by the generator
 
 **Steps to Reproduce**
 Steps to reproduce the behavior:
