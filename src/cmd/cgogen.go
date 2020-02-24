@@ -122,9 +122,9 @@ func main() {
 		doGoFile()
 		getPackagePathFromFilename = true
 	}
-	applog("Len the array %d", len(arrayTypes))
-	applog("Len the handles %d", len(handleTypes))
-	applog("Len the customType %d", len(customTypesMap))
+	applog("Number of array types : %d", len(arrayTypes))
+	applog("Number of handle types :  %d", len(handleTypes))
+	applog("Number of custom types : %d", len(customTypesMap))
 }
 
 func doGoFile() {
