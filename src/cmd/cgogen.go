@@ -612,7 +612,7 @@ func processFunc(fast *ast.File, fdecl *ast.FuncDecl, outFile *jen.File, dependa
 			}
 			if len(typeName) > 0 && rune(typeName[0]) == '[' {
 				typeName = "*C.GoSlice_"
-			} else if dealOutStringAsGostring && typeName == "string" {
+			} else if typeName == "string" {
 				typeName = "*C.GoString_"
 			} else if IsBasicGoType(typeName) {
 				typeName = "*" + typeName
@@ -831,8 +831,12 @@ func getCodeToConvertInParameter(_typeExpr *ast.Expr, packName string, name stri
 				if !isPointer {
 					leftPart = leftPart.Op("*")
 				}
-				leftPart = leftPart.Parens(jen.Op("*").Id(packName).Id(".").Id(typeName)).
-					Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
+				if typeName == "FeeCalculator" {
+					leftPart = jen.Id(name).Op(":=").Add(getCallbackCode(name))
+				} else {
+					leftPart = leftPart.Parens(jen.Op("*").Id(packName).Id(".").Id(typeName)).
+						Parens(jen.Qual("unsafe", "Pointer").Parens(jen.Id(argName(name))))
+				}
 				return jenCodeToArray(leftPart)
 			}
 		}
@@ -962,6 +966,7 @@ func isInplaceConvertType(typeName string) bool {
 }
 
 /* Process a type expression. Returns the code in C for the type and ok if successful */
+// typedata
 func processTypeExpression(fast *ast.File, type_expr ast.Expr,
 	packageName string, name string,
 	definedTypes *[]string,
@@ -1375,6 +1380,23 @@ var basicTypesMap = map[string]string{
 }
 
 var packageSeparator = "__"
+
+func getCallbackCode(varName string) *jen.Statement {
+
+	varFunction := jen.Func().Params(
+		jen.Id("pTx").Id("*coin.Transaction"),
+	).Parens(jen.Uint64().Op(",").Error()).Block(
+		jen.Var().Id("fee").Id("C.GoUint64_"),
+		jen.Id("handle").Op(":=").Id("registerTransactionHandle").Call(jen.Id("pTx")),
+		jen.Id("result").Op(":=").Id("C.callFeeCalculator").Call(jen.Id("_"+varName), jen.Id("handle"), jen.Id("&fee")),
+		jen.Id("closeHandle").Call(jen.Id("Handle").Call(jen.Id("handle"))),
+		jen.If(jen.Id("result").Op("==").Id("SKY_OK")).Block(
+			jen.Return(jen.Id("uint64").Call(jen.Id("fee")), jen.Nil())),
+		jen.Return(jen.Lit(0), jen.Qual("errors", "New").Call(jen.Lit("Error calculating fee"))),
+	)
+
+	return varFunction
+}
 
 func getPathPackage(path string) (packagePath_ string, mainPackagePath_ string) {
 
